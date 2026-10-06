@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { useColorScheme } from 'react-native';
+import { Platform } from 'react-native';
+import { useTheme } from '@/hooks/use-theme';
 
 const icons = {
   index: 'home-outline',
@@ -11,18 +12,43 @@ const icons = {
 } as const;
 
 export default function TabsLayout() {
-  const dark = useColorScheme() === 'dark';
-  const tint = dark ? '#D4B57D' : '#6B1E2E';
-  const background = dark ? '#211A1B' : '#F7F1E7';
+  const theme = useTheme();
 
   return (
     <Tabs screenOptions={({ route }) => ({
       headerShown: false,
-      tabBarActiveTintColor: tint,
-      tabBarInactiveTintColor: dark ? '#B8AAA2' : '#746B66',
-      tabBarStyle: { backgroundColor: background, borderTopColor: dark ? '#4A3035' : '#D9CCB9' },
-      tabBarIcon: ({ color, size }) => (
-        <Ionicons name={icons[route.name as keyof typeof icons]} color={color} size={size} />
+      tabBarActiveTintColor: theme.onPrimary,
+      tabBarInactiveTintColor: theme.textSecondary,
+      tabBarHideOnKeyboard: true,
+      tabBarLabelStyle: { fontSize: 10, fontWeight: '700', marginTop: 1 },
+      tabBarItemStyle: { borderRadius: 18, marginVertical: 6 },
+      tabBarActiveBackgroundColor: theme.primary,
+      tabBarStyle: {
+        position: 'absolute',
+        left: 12,
+        right: 12,
+        bottom: Platform.OS === 'ios' ? 20 : 12,
+        height: 68,
+        paddingHorizontal: 6,
+        paddingTop: 4,
+        paddingBottom: 4,
+        borderTopWidth: 0,
+        borderWidth: 1,
+        borderColor: theme.border,
+        borderRadius: 24,
+        backgroundColor: theme.cardStrong,
+        shadowColor: '#211A1B',
+        shadowOpacity: 0.16,
+        shadowRadius: 18,
+        shadowOffset: { width: 0, height: 8 },
+        elevation: 12,
+      },
+      tabBarIcon: ({ color, size, focused }) => (
+        <Ionicons
+          name={focused ? icons[route.name as keyof typeof icons].replace('-outline', '') as never : icons[route.name as keyof typeof icons]}
+          color={color}
+          size={focused ? size + 1 : size}
+        />
       ),
     })}>
       <Tabs.Screen name="index" options={{ title: 'Home' }} />

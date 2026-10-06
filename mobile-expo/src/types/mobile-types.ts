@@ -79,9 +79,19 @@ export interface Reservation {
   date: string;
   time: string;
   partySize: number;
-  status: 'PENDING_DEPOSIT' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | string;
+  status: 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW' | string;
   specialRequests?: string | null;
   depositAmount?: number;
+  confirmationExpiresAt?: string | null;
+  payment?: {
+    id: string;
+    amount: number;
+    currency: string;
+    status: string;
+    receiptUrl?: string | null;
+    orderItems?: { name: string; price: number; quantity: number }[] | null;
+  } | null;
+  review?: { id: string; rating: number; comment?: string | null } | null;
   createdAt?: string;
 }
 

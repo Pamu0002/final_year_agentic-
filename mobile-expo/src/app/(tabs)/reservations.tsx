@@ -16,6 +16,7 @@ import { brand } from '@/constants/brand';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { Reservation } from '@/types/mobile-types';
+import { BookingJourney } from '@/components/booking-journey';
 
 export default function ReservationsScreen() {
   const { user } = useAuth();
@@ -53,7 +54,7 @@ export default function ReservationsScreen() {
           onPress: async () => {
             setCancelling(true);
             try {
-              await api(`/api/reservations/${resId}/cancel`, { method: 'POST' });
+              await api(`/api/reservations/${resId}`, { method: 'DELETE' });
               setSelectedRes(null);
               fetchReservations();
               Alert.alert('Reservation Cancelled', 'Your table reservation has been cancelled.');
@@ -84,12 +85,14 @@ export default function ReservationsScreen() {
     switch (status) {
       case 'CONFIRMED':
         return { bg: brand.mint, color: brand.green, label: 'Confirmed' };
+      case 'PENDING':
+        return { bg: '#F7ECD6', color: '#8A5B13', label: 'Awaiting restaurant' };
+      case 'CHECKED_IN':
+        return { bg: '#E5EDF8', color: '#315C91', label: 'Checked in' };
       case 'COMPLETED':
         return { bg: '#E0F2FE', color: '#0369A1', label: 'Completed' };
       case 'CANCELLED':
         return { bg: '#FEE2E2', color: '#DC2626', label: 'Cancelled' };
-      case 'PENDING_DEPOSIT':
-        return { bg: '#F0E6D6', color: brand.gold, label: 'Pending Deposit' };
       default:
         return { bg: brand.cream, color: brand.ink, label: status };
     }
@@ -99,7 +102,7 @@ export default function ReservationsScreen() {
     return (
       <Screen style={{ paddingHorizontal: 16 }}>
         <Text style={styles.eyebrow}>MY DINING</Text>
-        <Text style={styles.title}>Reservations</Text>
+        <Text style={styles.title}>Bookings & payments</Text>
 
         <View style={styles.authLockCard}>
           <Ionicons name="calendar-outline" size={42} color={brand.green} />
@@ -118,7 +121,8 @@ export default function ReservationsScreen() {
   return (
     <Screen style={{ paddingHorizontal: 16 }}>
       <Text style={styles.eyebrow}>MY DINING</Text>
-      <Text style={styles.title}>Reservations</Text>
+      <Text style={styles.title}>Bookings & payments</Text>
+      <Text style={styles.intro}>Follow each table from deposit to restaurant confirmation, dining, and review.</Text>
 
       {/* Filter Tabs */}
       <View style={styles.tabContainer}>
@@ -184,6 +188,19 @@ export default function ReservationsScreen() {
                     {res.date} at {res.time} · {res.partySize} guests
                   </Text>
                 </View>
+
+                <View style={styles.paymentSummary}>
+                  <Ionicons name="card-outline" size={15} color={brand.green} />
+                  <Text style={styles.paymentText}>
+                    {res.payment?.status === 'SUCCEEDED'
+                      ? `${res.payment.currency} ${res.payment.amount.toLocaleString()} paid`
+                      : res.payment?.status === 'REFUNDED'
+                        ? 'Deposit refunded'
+                        : 'Deposit payment required'}
+                  </Text>
+                </View>
+
+                <BookingJourney reservation={res} compact />
               </Pressable>
             );
           })}
@@ -233,6 +250,26 @@ export default function ReservationsScreen() {
                 )}
               </View>
 
+              <View style={styles.modalSectionHeader}>
+                <Text style={styles.modalSectionTitle}>Booking progress</Text>
+                <Text style={styles.modalSectionCaption}>Live status</Text>
+              </View>
+              <BookingJourney reservation={selectedRes} />
+
+              <View style={styles.paymentCard}>
+                <View style={styles.paymentCardIcon}>
+                  <Ionicons name="receipt-outline" size={18} color={brand.green} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.paymentCardLabel}>Reservation deposit</Text>
+                  <Text style={styles.paymentCardValue}>
+                    {selectedRes.payment
+                      ? `${selectedRes.payment.currency} ${selectedRes.payment.amount.toLocaleString()} · ${selectedRes.payment.status}`
+                      : 'Payment not completed'}
+                  </Text>
+                </View>
+              </View>
+
               {selectedRes.status !== 'CANCELLED' && !isPast(selectedRes.date) && (
                 <Pressable
                   style={styles.cancelActionBtn}
@@ -257,6 +294,7 @@ export default function ReservationsScreen() {
 const styles = StyleSheet.create({
   eyebrow: { color: brand.coral, fontWeight: '800', letterSpacing: 1.4, fontSize: 12 },
   title: { fontSize: 28, color: brand.ink, fontWeight: '700', letterSpacing: -0.8, marginBottom: 12 },
+  intro: { color: brand.muted, fontSize: 14, lineHeight: 20, marginTop: -10, marginBottom: 4 },
   authLockCard: {
     marginTop: 40,
     alignItems: 'center',
@@ -302,15 +340,17 @@ const styles = StyleSheet.create({
   errorContainer: { marginTop: 20, padding: 14, backgroundColor: '#F0E6D6', borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   errorText: { color: brand.ink, fontSize: 13, flex: 1 },
   list: { gap: 12, paddingBottom: 24 },
-  card: { padding: 16, borderWidth: 1, borderColor: brand.border, borderRadius: 16, backgroundColor: '#FFFFFF', gap: 6 },
+  card: { padding: 16, borderWidth: 1, borderColor: brand.border, borderRadius: 20, backgroundColor: '#FFFFFF', gap: 8 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   resName: { fontSize: 17, fontWeight: '700', color: brand.ink, flex: 1 },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   badgeText: { fontSize: 12, fontWeight: '700' },
   cardDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   detailText: { color: brand.muted, fontSize: 13 },
+  paymentSummary: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  paymentText: { color: brand.ink, fontWeight: '600', fontSize: 12 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
+  modalCard: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 30, maxHeight: '90%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   modalTitle: { fontSize: 18, fontWeight: '700', color: brand.ink },
   venueTitle: { fontSize: 22, fontWeight: '700', color: brand.ink },
@@ -319,6 +359,13 @@ const styles = StyleSheet.create({
   metaLine: { flexDirection: 'row', justifyContent: 'space-between' },
   metaLabel: { fontWeight: '600', color: brand.muted, fontSize: 13 },
   metaVal: { fontWeight: '700', color: brand.ink, fontSize: 13 },
+  modalSectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  modalSectionTitle: { color: brand.ink, fontSize: 15, fontWeight: '800' },
+  modalSectionCaption: { color: brand.green, fontSize: 11, fontWeight: '700' },
+  paymentCard: { flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: brand.cream, borderRadius: 15, padding: 13, marginTop: 12, marginBottom: 16 },
+  paymentCardIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: brand.mint, alignItems: 'center', justifyContent: 'center' },
+  paymentCardLabel: { color: brand.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
+  paymentCardValue: { color: brand.ink, fontSize: 13, fontWeight: '700', marginTop: 2 },
   cancelActionBtn: {
     borderWidth: 1,
     borderColor: '#DC2626',

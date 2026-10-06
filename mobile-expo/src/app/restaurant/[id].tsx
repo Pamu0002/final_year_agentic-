@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -86,8 +87,9 @@ export default function RestaurantScreen() {
   const handleBookTable = async () => {
     if (!id) return;
     setSubmittingBooking(true);
+    let pendingReservationId: string | null = null;
     try {
-      await api('/api/reservations', {
+      const reservation = await api<{ id: string }>('/api/reservations', {
         method: 'POST',
         body: {
           restaurantId: id,
@@ -97,12 +99,20 @@ export default function RestaurantScreen() {
           specialRequests: specialRequests || undefined,
         },
       });
+      pendingReservationId = reservation.id;
+      const checkout = await api<{ paymentUrl: string }>('/api/payments/checkout-session', {
+        method: 'POST',
+        body: { reservationId: reservation.id, orderItems: [] },
+      });
       setBookingModalVisible(false);
-      Alert.alert('Reservation Created!', 'Your table reservation request has been submitted successfully.', [
-        { text: 'View Reservations', onPress: () => router.push('/(tabs)/reservations') },
-        { text: 'OK' },
-      ]);
+      await WebBrowser.openBrowserAsync(checkout.paymentUrl, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      });
+      router.push('/(tabs)/reservations');
     } catch (err: any) {
+      if (pendingReservationId) {
+        await api(`/api/reservations/${pendingReservationId}`, { method: 'DELETE' }).catch(() => undefined);
+      }
       Alert.alert('Booking Error', err.message || 'Could not place reservation.');
     } finally {
       setSubmittingBooking(false);
@@ -454,7 +464,7 @@ export default function RestaurantScreen() {
               {submittingBooking ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={styles.confirmBtnText}>Confirm Reservation</Text>
+                <Text style={styles.confirmBtnText}>Continue to secure payment</Text>
               )}
             </Pressable>
           </View>

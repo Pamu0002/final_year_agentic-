@@ -3,14 +3,16 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '@/components/screen';
+import { BookingJourney } from '@/components/booking-journey';
 import { brand } from '@/constants/brand';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
-import { Restaurant } from '@/types/mobile-types';
+import { Reservation, Restaurant } from '@/types/mobile-types';
 
 export default function HomeScreen() {
   const { user } = useAuth();
   const [featured, setFeatured] = useState<Restaurant | null>(null);
+  const [nextBooking, setNextBooking] = useState<Reservation | null>(null);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
@@ -24,6 +26,46 @@ export default function HomeScreen() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setNextBooking(null);
+      return;
+    }
+
+    let mounted = true;
+    const loadBooking = () => {
+      api<Reservation[]>('/api/reservations')
+        .then((items) => {
+          if (!mounted) return;
+          const active = items
+            .filter((item) => ['PENDING', 'CONFIRMED', 'CHECKED_IN'].includes(item.status))
+            .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`))[0];
+          const waitingForReview = items.find((item) => item.status === 'COMPLETED' && !item.review);
+          setNextBooking(active || waitingForReview || null);
+        })
+        .catch(() => {});
+    };
+
+    loadBooking();
+    const timer = setInterval(loadBooking, 20_000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, [user]);
+
+  const bookingAction = nextBooking
+    ? nextBooking.payment?.status !== 'SUCCEEDED' && ['PENDING', 'CONFIRMED'].includes(nextBooking.status)
+      ? { eyebrow: 'ACTION REQUIRED', title: 'Complete your deposit', copy: 'Secure the booking so the restaurant can review it.', icon: 'card-outline' as const }
+      : nextBooking.status === 'PENDING'
+        ? { eyebrow: 'RESTAURANT RESPONSE', title: 'Waiting for confirmation', copy: 'Payment received. You will be notified as soon as the restaurant responds.', icon: 'storefront-outline' as const }
+        : nextBooking.status === 'CONFIRMED'
+          ? { eyebrow: 'YOU’RE ALL SET', title: 'Your table is confirmed', copy: 'Review your booking details before you arrive.', icon: 'checkmark-circle-outline' as const }
+          : nextBooking.status === 'CHECKED_IN'
+            ? { eyebrow: 'DINING NOW', title: 'Enjoy your experience', copy: 'You are checked in and your table journey is in progress.', icon: 'restaurant-outline' as const }
+            : { eyebrow: 'ONE LAST STEP', title: 'How was your visit?', copy: 'Share a review and help other diners choose.', icon: 'star-outline' as const }
+    : null;
 
   const handleProtectedAction = (targetRoute: string) => {
     if (!user) {
@@ -69,6 +111,39 @@ export default function HomeScreen() {
             <Text style={styles.greetingSubtitle}>Ready to find your table?</Text>
           </View>
         </View>
+
+        {nextBooking && bookingAction && (
+          <Pressable style={styles.bookingCard} onPress={() => router.push('/(tabs)/reservations')}>
+            <View style={styles.bookingAccent} />
+            <View style={styles.bookingTopRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bookingEyebrow}>YOUR NEXT BOOKING</Text>
+                <Text style={styles.bookingRestaurant}>{nextBooking.restaurant.name}</Text>
+                <Text style={styles.bookingMeta}>
+                  {nextBooking.date.slice(0, 10)} · {nextBooking.time} · {nextBooking.partySize} guests
+                </Text>
+              </View>
+              <View style={styles.liveBadge}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText}>LIVE</Text>
+              </View>
+            </View>
+
+            <View style={styles.nextActionPanel}>
+              <View style={styles.nextActionIcon}>
+                <Ionicons name={bookingAction.icon} size={19} color={brand.gold} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.nextActionEyebrow}>{bookingAction.eyebrow}</Text>
+                <Text style={styles.nextActionTitle}>{bookingAction.title}</Text>
+                <Text style={styles.nextActionCopy}>{bookingAction.copy}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={19} color="#FFFFFF" />
+            </View>
+
+            <BookingJourney reservation={nextBooking} compact />
+          </Pressable>
+        )}
 
         {/* Hero Section */}
         <View style={styles.heroSection}>
@@ -251,6 +326,34 @@ const styles = StyleSheet.create({
   },
   greetingTitle: { fontSize: 13, fontWeight: '700', color: brand.ink },
   greetingSubtitle: { fontSize: 11, color: brand.muted },
+  bookingCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: brand.border,
+    borderRadius: 24,
+    padding: 15,
+    gap: 12,
+    overflow: 'hidden',
+    marginBottom: 4,
+    shadowColor: brand.greenDark,
+    shadowOpacity: 0.11,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 5,
+  },
+  bookingAccent: { position: 'absolute', left: 0, right: 0, top: 0, height: 4, backgroundColor: brand.gold },
+  bookingTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingTop: 3 },
+  bookingEyebrow: { color: brand.green, fontSize: 10, fontWeight: '900', letterSpacing: 1.3 },
+  bookingRestaurant: { color: brand.ink, fontSize: 21, fontWeight: '800', marginTop: 4 },
+  bookingMeta: { color: brand.muted, fontSize: 12, marginTop: 3 },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: brand.mint, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 99 },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: brand.green },
+  liveText: { color: brand.green, fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+  nextActionPanel: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: brand.greenDark, borderRadius: 17, padding: 13 },
+  nextActionIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.09)', alignItems: 'center', justifyContent: 'center' },
+  nextActionEyebrow: { color: '#DCC08E', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  nextActionTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '800', marginTop: 2 },
+  nextActionCopy: { color: 'rgba(255,255,255,0.68)', fontSize: 11, lineHeight: 15, marginTop: 2 },
   heroSection: { gap: 10, marginBottom: 20 },
   tagBadge: {
     flexDirection: 'row',
