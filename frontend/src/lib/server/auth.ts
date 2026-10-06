@@ -6,6 +6,11 @@ export interface AdminUser {
   email: string;
   name: string | null;
   role: "SYSTEM_ADMIN" | "RESTAURANT_ADMIN" | "CUSTOMER";
+  diningPreferences?: {
+    cuisines?: string[];
+    dietaryRestrictions?: string[];
+    budgetPreference?: string;
+  };
 }
 
 export async function requireRestaurantAdmin(): Promise<AdminUser> {

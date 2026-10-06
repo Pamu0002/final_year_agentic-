@@ -19,7 +19,7 @@ export function ReservationsTrendChart({ data }: ReservationsTrendChartProps) {
   return (
     <ResponsiveContainer width="100%" height={250}>
       <LineChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
         <XAxis
           dataKey="date"
           tick={{ fontSize: 12 }}
@@ -37,7 +37,7 @@ export function ReservationsTrendChart({ data }: ReservationsTrendChartProps) {
         <Line
           type="monotone"
           dataKey="count"
-          stroke="#3b82f6"
+          stroke="var(--chart-1)"
           strokeWidth={2}
           dot={false}
           name="Reservations"

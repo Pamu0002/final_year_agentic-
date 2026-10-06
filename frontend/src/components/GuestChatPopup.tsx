@@ -5,12 +5,8 @@ import { MessageSquare, X, Send, UtensilsCrossed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { resolveLocation } from "@/lib/geolocation";
-
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-}
+import { MessageBubble } from "@/components/chat/MessageBubble";
+import type { Message, RestaurantResult, MenuItemResult } from "@/hooks/useChat";
 
 function uid() {
   return crypto.randomUUID();
@@ -31,7 +27,7 @@ export function GuestChatPopup() {
 
   const send = useCallback(async (text: string) => {
     if (!text.trim() || loading) return;
-    const userMsg: Message = { id: uid(), role: "user", content: text };
+    const userMsg: Message = { id: uid(), role: "user", content: text, timestamp: new Date() };
     setMessages((p) => [...p, userMsg]);
     setInput("");
     setLoading(true);
@@ -46,17 +42,33 @@ export function GuestChatPopup() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, sessionId, history, ...(location ?? {}) }),
       });
-      const data = await res.json() as { message: string };
+      if (!res.ok) throw new Error("Request failed");
+
+      const data = await res.json() as {
+        message: string;
+        data?: RestaurantResult[] | MenuItemResult[];
+      };
       let reply = data.message;
       if (data.message === "__RESTAURANT_LIST__") {
         reply = "Here are some restaurants I found for you! Sign in to see full details and book a table.";
       } else if (data.message === "__MENU_LIST__") {
         reply = "Here's their menu! Sign in to order and book a table.";
       }
-      setMessages((p) => [...p, { id: uid(), role: "assistant", content: reply }]);
+      setMessages((p) => [...p, {
+        id: uid(),
+        role: "assistant",
+        content: reply,
+        data: data.data,
+        timestamp: new Date(),
+      }]);
       historyRef.current = [...historyRef.current, { role: "assistant", content: reply }];
     } catch {
-      setMessages((p) => [...p, { id: uid(), role: "assistant", content: "Sorry, something went wrong. Please try again." }]);
+      setMessages((p) => [...p, {
+        id: uid(),
+        role: "assistant",
+        content: "Sorry, something went wrong. Please try again.",
+        timestamp: new Date(),
+      }]);
     } finally {
       setLoading(false);
     }
@@ -75,7 +87,7 @@ export function GuestChatPopup() {
 
       {/* Popup */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 w-80 sm:w-96 rounded-2xl border bg-background shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: "520px" }}>
+        <div className="fixed inset-x-3 bottom-24 z-50 rounded-2xl border bg-background shadow-2xl flex flex-col overflow-hidden sm:inset-x-auto sm:right-6 sm:w-[460px]" style={{ maxHeight: "min(640px, calc(100vh - 8rem))" }}>
           {/* Header */}
           <div className="flex items-center gap-2 border-b px-4 py-3 bg-card">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -105,17 +117,7 @@ export function GuestChatPopup() {
             )}
 
             {messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-br-sm"
-                      : "bg-muted text-foreground rounded-bl-sm"
-                  }`}
-                >
-                  {msg.content}
-                </div>
-              </div>
+              <MessageBubble key={msg.id} message={msg} onSend={send} />
             ))}
 
             {loading && (

@@ -1,0 +1,101 @@
+import { TransactionItem, UpcomingTask } from "./types";
+
+export const USER_PROFILE = {
+  name: "Alex Rivera",
+  role: "Lead Product Designer",
+  email: "alex.rivera@novapulse.io",
+  avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+};
+
+export const MOCK_TRANSACTIONS: TransactionItem[] = [
+  {
+    id: "tx-1",
+    name: "Figma Enterprise",
+    category: "Design team subscription",
+    date: "Today, 11:42 AM",
+    amount: -450.0,
+    type: "negative",
+    brand: "figma",
+    iconBg: "bg-purple-100 dark:bg-purple-950/50",
+    iconColor: "text-purple-600 dark:text-purple-400",
+  },
+  {
+    id: "tx-2",
+    name: "Stripe Payout",
+    category: "SaaS revenue disbursement",
+    date: "Yesterday, 4:15 PM",
+    amount: 14250.0,
+    type: "positive",
+    brand: "stripe",
+    iconBg: "bg-indigo-100 dark:bg-indigo-950/50",
+    iconColor: "text-indigo-600 dark:text-indigo-400",
+  },
+  {
+    id: "tx-3",
+    name: "Vercel Pro Team",
+    category: "Frontend edge hosting",
+    date: "Sep 22, 2026",
+    amount: -120.0,
+    type: "negative",
+    brand: "vercel",
+    iconBg: "bg-slate-100 dark:bg-slate-800",
+    iconColor: "text-slate-900 dark:text-slate-100",
+  },
+  {
+    id: "tx-4",
+    name: "Linear Labs Client",
+    category: "Consulting milestone deposit",
+    date: "Sep 20, 2026",
+    amount: 3800.0,
+    type: "positive",
+    brand: "linear",
+    iconBg: "bg-emerald-100 dark:bg-emerald-950/50",
+    iconColor: "text-emerald-600 dark:text-emerald-400",
+  },
+  {
+    id: "tx-5",
+    name: "OpenAI Platform",
+    category: "API usage tier 4",
+    date: "Sep 18, 2026",
+    amount: -320.5,
+    type: "negative",
+    brand: "openai",
+    iconBg: "bg-teal-100 dark:bg-teal-950/50",
+    iconColor: "text-teal-600 dark:text-teal-400",
+  },
+];
+
+export const MOCK_UPCOMING_TASKS: UpcomingTask[] = [
+  {
+    id: "task-1",
+    title: "Finalize Bento mobile responsive layout",
+    project: "NovaPulse Core",
+    dueDate: "Today, 5:00 PM",
+    priority: "high",
+    completed: false,
+  },
+  {
+    id: "task-2",
+    title: "Review Q4 design system audit with team",
+    project: "Design Guild",
+    dueDate: "Tomorrow, 10:30 AM",
+    priority: "medium",
+    completed: false,
+  },
+  {
+    id: "task-3",
+    title: "Approve Stripe billing webhook integration",
+    project: "Payments v2",
+    dueDate: "Sep 26, 2026",
+    priority: "high",
+    completed: true,
+  },
+  {
+    id: "task-4",
+    title: "Customer journey feedback analysis",
+    project: "Growth Engine",
+    dueDate: "Sep 28, 2026",
+    priority: "low",
+    completed: false,
+  },
+];

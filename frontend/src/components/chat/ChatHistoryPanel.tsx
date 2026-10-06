@@ -69,16 +69,25 @@ export function ChatHistoryPanel({
         ) : (
           <div className="space-y-1.5">
             {sessions.map((s) => (
-              <button
+              <div
                 key={s.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onResume(s)}
-                className="w-full text-left rounded-xl border border-border bg-card px-3 py-2.5 hover:border-primary/40 hover:bg-muted/50 transition-colors group"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onResume(s);
+                  }
+                }}
+                className="w-full text-left rounded-xl border border-border bg-card px-3 py-2.5 hover:border-primary/40 hover:bg-muted/50 transition-colors group cursor-pointer"
               >
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-sm font-medium text-foreground leading-tight truncate">
                     {s.title ?? "New conversation"}
                   </p>
                   <button
+                    type="button"
                     onClick={(e) => remove(s.id, e)}
                     disabled={deletingId === s.id}
                     className="shrink-0 flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all disabled:opacity-50"
@@ -87,7 +96,7 @@ export function ChatHistoryPanel({
                   </button>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-0.5">{relativeTime(s.updatedAt)}</p>
-              </button>
+              </div>
             ))}
           </div>
         )}

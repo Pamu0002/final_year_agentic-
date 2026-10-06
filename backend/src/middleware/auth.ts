@@ -14,28 +14,37 @@ export const authenticate = async (
     return;
   }
 
-  const decoded = await adminAuth.verifyIdToken(token);
-  const dbUser = await prisma.user.findUnique({
-    where: { firebaseUid: decoded.uid },
-  });
+  try {
+    const decoded = await adminAuth.verifyIdToken(token);
+    const dbUser = await prisma.user.findUnique({
+      where: { firebaseUid: decoded.uid },
+    });
 
-  if (!dbUser) {
-    res.status(401).json({ error: "User not found" });
-    return;
+    if (!dbUser) {
+      res.status(401).json({ error: "User not found" });
+      return;
+    }
+
+    if (!dbUser.isActive) {
+      res.status(403).json({ error: "Account suspended" });
+      return;
+    }
+
+    req.user = {
+      uid: decoded.uid,
+      email: decoded.email!,
+      role: dbUser.role,
+      dbId: dbUser.id,
+    };
+    next();
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "auth/id-token-expired") {
+      res.status(401).json({ error: "Your session expired. Please refresh the page and try again." });
+      return;
+    }
+    res.status(401).json({ error: "Invalid authentication token" });
   }
-
-  if (!dbUser.isActive) {
-    res.status(403).json({ error: "Account suspended" });
-    return;
-  }
-
-  req.user = {
-    uid: decoded.uid,
-    email: decoded.email!,
-    role: dbUser.role,
-    dbId: dbUser.id,
-  };
-  next();
 };
 
 export const requireRole =

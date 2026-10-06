@@ -1,0 +1,5 @@
+ALTER TABLE "RestaurantHoliday"
+ADD COLUMN "endDate" DATE,
+ADD COLUMN "allDay" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "startTime" TEXT,
+ADD COLUMN "endTime" TEXT;

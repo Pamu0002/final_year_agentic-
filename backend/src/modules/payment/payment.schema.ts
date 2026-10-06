@@ -14,16 +14,22 @@ export const OrderItemSchema = z.object({
 export const CreatePaymentIntentBodySchema = z
   .object({
     reservationId: z.string().uuid(),
-    orderItems: z.array(OrderItemSchema).min(1),
+    orderItems: z.array(OrderItemSchema).default([]),
   })
   .openapi("CreatePaymentIntentBody");
 
 export const CreateCheckoutSessionBodySchema = z
   .object({
     reservationId: z.string().uuid(),
-    orderItems: z.array(OrderItemSchema).min(1),
+    orderItems: z.array(OrderItemSchema).default([]),
   })
   .openapi("CreateCheckoutSessionBody");
+
+export const ConfirmCheckoutSessionBodySchema = z
+  .object({
+    sessionId: z.string().startsWith("cs_"),
+  })
+  .openapi("ConfirmCheckoutSessionBody");
 
 // ── Response schemas ──────────────────────────────────────────────────────────
 

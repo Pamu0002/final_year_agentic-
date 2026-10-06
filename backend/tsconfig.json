@@ -3,11 +3,15 @@
     "target": "ES2023",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "rootDir": ".",
+    "outDir": "dist",
     "lib": ["ES2023"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
-  }
+  },
+  "include": ["src/**/*.ts", "lib/**/*.ts"],
+  "exclude": ["node_modules", "dist", "src/tests/**/*.ts"]
 }

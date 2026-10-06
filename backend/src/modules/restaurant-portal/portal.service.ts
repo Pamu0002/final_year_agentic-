@@ -1,6 +1,10 @@
 import { prisma } from "../../../lib/db.js";
 import { adminFirestore } from "../../config/firebase.js";
+import { sendEmail } from "../../config/nodemailer.js";
 import { createNotification } from "../../../lib/notifications.js";
+import { refundReservationPayment } from "../payment/refund.service.js";
+import { getSlotCapacity } from "../restaurant/restaurant.service.js";
+import { awardLoyaltyPoints } from "../user/user.service.js";
 
 const parseRestaurant = <T extends { cuisineTypes: string; imageUrls: string }>(r: T) => ({
   ...r,
@@ -174,8 +178,17 @@ export const getMyMenu = async (adminId: string) => {
 
 // ── reservation mutations ─────────────────────────────────────────────────────
 
-const VALID_STATUSES = ["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED", "NO_SHOW"] as const;
+const VALID_STATUSES = ["PENDING", "CONFIRMED", "CHECKED_IN", "CANCELLED", "COMPLETED", "NO_SHOW"] as const;
 type ReservationStatus = (typeof VALID_STATUSES)[number];
+
+const ALLOWED_STATUS_TRANSITIONS: Record<ReservationStatus, ReservationStatus[]> = {
+  PENDING: ["CONFIRMED", "CANCELLED"],
+  CONFIRMED: ["CHECKED_IN", "COMPLETED", "CANCELLED", "NO_SHOW"],
+  CHECKED_IN: ["COMPLETED"],
+  COMPLETED: [],
+  CANCELLED: [],
+  NO_SHOW: [],
+};
 
 export const updateReservationStatus = async (
   adminId: string,
@@ -186,9 +199,103 @@ export const updateReservationStatus = async (
   if (!restaurant) throw Object.assign(new Error("Restaurant not found"), { status: 404 });
   const reservation = await prisma.reservation.findFirst({
     where: { id: reservationId, restaurantId: restaurant.id },
+    include: { payment: true, user: true },
   });
   if (!reservation) throw Object.assign(new Error("Reservation not found"), { status: 404 });
-  return prisma.reservation.update({ where: { id: reservationId }, data: { status } });
+  const allowedTransitions = ALLOWED_STATUS_TRANSITIONS[reservation.status as ReservationStatus] ?? [];
+  if (!allowedTransitions.includes(status)) {
+    throw Object.assign(
+      new Error(`Cannot change reservation from ${reservation.status} to ${status}`),
+      { status: 409 },
+    );
+  }
+  if (status === "CONFIRMED" && reservation.payment?.status !== "SUCCEEDED") {
+    throw Object.assign(
+      new Error("Payment must be completed before this reservation can be confirmed"),
+      { status: 409 },
+    );
+  }
+
+  const refund = status === "CANCELLED"
+    ? await refundReservationPayment(reservationId, "RESTAURANT_CANCELLATION")
+    : null;
+
+  const transition = await prisma.reservation.updateMany({
+    where: { id: reservationId, status: reservation.status },
+    data: {
+      status,
+      ...(status === "CANCELLED" ? {
+        cancelledAt: new Date(),
+        cancelledBy: "RESTAURANT",
+        cancellationReason: "RESTAURANT_CANCELLED",
+        holdExpiresAt: null,
+      } : {}),
+      ...(["CONFIRMED", "CANCELLED"].includes(status) ? { confirmationExpiresAt: null } : {}),
+    },
+  });
+  if (transition.count === 0) {
+    throw Object.assign(
+      new Error("This reservation changed while you were updating it. Refresh and try again."),
+      { status: 409 },
+    );
+  }
+  const updated = await prisma.reservation.findUnique({
+    where: { id: reservationId },
+    include: { payment: true },
+  });
+  if (!updated) throw Object.assign(new Error("Reservation not found"), { status: 404 });
+
+  const customerMessage = status === "CANCELLED"
+    ? refund?.status === "REFUNDED" || refund?.status === "ALREADY_REFUNDED"
+      ? `${restaurant.name} cancelled your reservation. A full refund of LKR ${refund.amount.toLocaleString()} was submitted to Stripe.`
+      : `${restaurant.name} cancelled your reservation.`
+    : status === "CONFIRMED"
+      ? `${restaurant.name} accepted your booking. Your table is confirmed.`
+      : `Your reservation at ${restaurant.name} is now ${status.replaceAll("_", " ").toLowerCase()}.`;
+  createNotification(
+    reservation.userId,
+    status === "CANCELLED" ? "RESERVATION_CANCELLED" : "RESERVATION_CONFIRMED",
+    status === "CANCELLED"
+      ? "Reservation cancelled"
+      : status === "CONFIRMED"
+        ? "Reservation confirmed"
+        : "Reservation updated",
+    customerMessage,
+    { reservationId, restaurantId: restaurant.id, status },
+  ).catch(() => {});
+
+  if (status === "CONFIRMED") {
+    const date = reservation.date.toISOString().split("T")[0];
+    awardLoyaltyPoints(
+      reservation.userId,
+      100,
+      "EARN_RESERVATION",
+      `Reservation at ${restaurant.name}`,
+      reservation.id,
+    ).catch(() => {});
+
+    adminFirestore.collection("reservations").doc(reservation.id).set({
+      userId: reservation.userId,
+      restaurantId: restaurant.id,
+      date,
+      time: reservation.time,
+      partySize: reservation.partySize,
+      status: "CONFIRMED",
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch((error) => console.error("Firestore confirmation sync failed:", error));
+
+    sendEmail(
+      reservation.user.email,
+      `Reservation confirmed — ${restaurant.name}`,
+      `<h2>Your table is confirmed</h2>
+       <p><strong>Restaurant:</strong> ${restaurant.name}</p>
+       <p><strong>Date:</strong> ${date}</p>
+       <p><strong>Time:</strong> ${reservation.time}</p>
+       <p><strong>Party size:</strong> ${reservation.partySize}</p>`,
+    ).catch((error) => console.error("Restaurant confirmation email failed:", error));
+  }
+
+  return { ...updated, refundOutcome: refund };
 };
 
 export const checkInReservation = async (adminId: string, reservationId: string) => {
@@ -298,21 +405,27 @@ export const getMyPayments = async (
 
 export interface AvailabilitySlot {
   time: string;
-  totalTables: number;
-  bookedTables: number;
+  capacity: number;
+  bookedSeats: number;
+  remainingSeats?: number;
   available: boolean;
+  isBlocked: boolean;
+  note?: string | null;
 }
 
 export const getAvailabilityForDate = async (adminId: string, date: string): Promise<AvailabilitySlot[]> => {
   const restaurant = await prisma.restaurant.findFirst({ where: { adminId } });
   if (!restaurant) return [];
-  const doc = await adminFirestore
-    .collection("restaurants")
-    .doc(restaurant.id)
-    .collection("availability")
-    .doc(date)
-    .get();
-  return doc.exists ? (doc.data()?.slots ?? []) : [];
+  const slots = await getSlotCapacity(restaurant.id, date);
+  return (slots ?? []).map((slot) => ({
+    time: slot.time,
+    capacity: slot.maxCapacity,
+    bookedSeats: slot.bookedSeats,
+    remainingSeats: slot.remainingSeats,
+    available: slot.available,
+    isBlocked: slot.isBlocked,
+    note: slot.reason,
+  }));
 };
 
 export const setAvailabilityForDate = async (
@@ -322,13 +435,103 @@ export const setAvailabilityForDate = async (
 ) => {
   const restaurant = await prisma.restaurant.findFirst({ where: { adminId } });
   if (!restaurant) throw Object.assign(new Error("Restaurant not found"), { status: 404 });
+  const uniqueTimes = new Set<string>();
+  for (const slot of slots) {
+    if (!/^\d{2}:\d{2}$/.test(slot.time)) {
+      throw Object.assign(new Error(`Invalid time: ${slot.time}`), { status: 400 });
+    }
+    if (uniqueTimes.has(slot.time)) {
+      throw Object.assign(new Error(`Duplicate time slot: ${slot.time}`), { status: 400 });
+    }
+    if (!Number.isInteger(slot.capacity) || slot.capacity < 1 || slot.capacity > 10_000) {
+      throw Object.assign(new Error(`Invalid capacity for ${slot.time}`), { status: 400 });
+    }
+    uniqueTimes.add(slot.time);
+  }
+
+  const dateValue = new Date(date);
+  await prisma.$transaction(async (tx) => {
+    await tx.restaurantSlotOverride.deleteMany({
+      where: { restaurantId: restaurant.id, date: dateValue },
+    });
+    if (slots.length) {
+      await tx.restaurantSlotOverride.createMany({
+        data: slots.map((slot) => ({
+          restaurantId: restaurant.id,
+          date: dateValue,
+          time: slot.time,
+          capacity: slot.capacity,
+          isBlocked: slot.isBlocked || !slot.available,
+          note: slot.note?.trim() || null,
+        })),
+      });
+    }
+  });
+
+  // Keep Firestore as a compatibility mirror; PostgreSQL is authoritative.
   await adminFirestore
     .collection("restaurants")
     .doc(restaurant.id)
     .collection("availability")
     .doc(date)
-    .set({ slots, updatedAt: new Date().toISOString() });
+    .set({ slots, updatedAt: new Date().toISOString(), source: "postgres" })
+    .catch((error) => console.error("Availability Firestore mirror failed (non-fatal):", error));
   return { restaurantId: restaurant.id, date, slots };
+};
+
+// ── physical tables ─────────────────────────────────────────────────────────
+
+export const getMyTables = async (adminId: string) => {
+  const restaurant = await prisma.restaurant.findFirst({ where: { adminId } });
+  if (!restaurant) return [];
+  return prisma.restaurantTable.findMany({
+    where: { restaurantId: restaurant.id },
+    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+  });
+};
+
+export const createTable = async (
+  adminId: string,
+  input: { name: string; capacity: number; isActive?: boolean },
+) => {
+  const restaurant = await prisma.restaurant.findFirst({ where: { adminId } });
+  if (!restaurant) throw Object.assign(new Error("Restaurant not found"), { status: 404 });
+  const name = input.name.trim();
+  if (!name || !Number.isInteger(input.capacity) || input.capacity < 1 || input.capacity > 100) {
+    throw Object.assign(new Error("A table name and capacity from 1 to 100 are required"), { status: 400 });
+  }
+  return prisma.restaurantTable.create({
+    data: { restaurantId: restaurant.id, name, capacity: input.capacity, isActive: input.isActive ?? true },
+  });
+};
+
+export const updateTable = async (
+  adminId: string,
+  tableId: string,
+  input: { name?: string; capacity?: number; isActive?: boolean },
+) => {
+  const restaurant = await prisma.restaurant.findFirst({ where: { adminId } });
+  if (!restaurant) throw Object.assign(new Error("Restaurant not found"), { status: 404 });
+  const table = await prisma.restaurantTable.findFirst({ where: { id: tableId, restaurantId: restaurant.id } });
+  if (!table) throw Object.assign(new Error("Table not found"), { status: 404 });
+  if (input.capacity !== undefined && (!Number.isInteger(input.capacity) || input.capacity < 1 || input.capacity > 100)) {
+    throw Object.assign(new Error("Capacity must be from 1 to 100"), { status: 400 });
+  }
+  return prisma.restaurantTable.update({
+    where: { id: tableId },
+    data: {
+      ...(input.name !== undefined && { name: input.name.trim() }),
+      ...(input.capacity !== undefined && { capacity: input.capacity }),
+      ...(input.isActive !== undefined && { isActive: input.isActive }),
+    },
+  });
+};
+
+export const deleteTable = async (adminId: string, tableId: string) => {
+  const restaurant = await prisma.restaurant.findFirst({ where: { adminId } });
+  if (!restaurant) throw Object.assign(new Error("Restaurant not found"), { status: 404 });
+  const result = await prisma.restaurantTable.deleteMany({ where: { id: tableId, restaurantId: restaurant.id } });
+  if (!result.count) throw Object.assign(new Error("Table not found"), { status: 404 });
 };
 
 // ── promotions ────────────────────────────────────────────────────────────────
@@ -342,33 +545,77 @@ interface PromotionInput {
   endDate: string;
   isActive?: boolean;
   imageUrl?: string;
+  menuItemIds?: string[];
 }
+
+const promotionMenuInclude = {
+  menuItems: { include: { menuItem: true } },
+} as const;
+
+const serializePromotion = <T extends { menuItems: { menuItem: unknown }[] }>(promotion: T) => ({
+  ...promotion,
+  menuItems: promotion.menuItems.map((entry) => entry.menuItem),
+});
+
+const validatePromotionMenuItems = async (restaurantId: string, ids: string[] = []) => {
+  const menuItemIds = [...new Set(ids.filter(Boolean))];
+  if (menuItemIds.length === 0) return menuItemIds;
+  const ownedCount = await prisma.menuItem.count({
+    where: { restaurantId, id: { in: menuItemIds } },
+  });
+  if (ownedCount !== menuItemIds.length) {
+    throw Object.assign(new Error("One or more menu items do not belong to this restaurant"), { status: 400 });
+  }
+  return menuItemIds;
+};
+
+const promotionDate = (value: string, endOfDay = false) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`);
+  }
+  return new Date(value);
+};
+
+const validateMenuDiscount = (menuItemIds: string[], discountValue?: number | null) => {
+  if (menuItemIds.length > 0 && (!discountValue || discountValue <= 0 || discountValue > 100)) {
+    throw Object.assign(new Error("Select a discount between 1 and 100 percent for menu items"), { status: 400 });
+  }
+};
 
 export const getMyPromotions = async (adminId: string) => {
   const restaurant = await prisma.restaurant.findFirst({ where: { adminId } });
   if (!restaurant) return [];
-  return prisma.promotion.findMany({
+  const promotions = await prisma.promotion.findMany({
     where: { restaurantId: restaurant.id },
     orderBy: { createdAt: "desc" },
+    include: promotionMenuInclude,
   });
+  return promotions.map(serializePromotion);
 };
 
 export const createPromotion = async (adminId: string, input: PromotionInput) => {
   const restaurant = await prisma.restaurant.findFirst({ where: { adminId } });
   if (!restaurant) throw Object.assign(new Error("Restaurant not found"), { status: 404 });
-  return prisma.promotion.create({
+  const menuItemIds = await validatePromotionMenuItems(restaurant.id, input.menuItemIds);
+  validateMenuDiscount(menuItemIds, input.discountValue);
+  const promotion = await prisma.promotion.create({
     data: {
       restaurantId: restaurant.id,
       title: input.title,
       description: input.description,
       type: input.type,
       discountValue: input.discountValue ?? null,
-      startDate: new Date(input.startDate),
-      endDate: new Date(input.endDate),
+      startDate: promotionDate(input.startDate),
+      endDate: promotionDate(input.endDate, true),
       isActive: input.isActive ?? true,
       imageUrl: input.imageUrl ?? null,
+      menuItems: {
+        create: menuItemIds.map((menuItemId) => ({ menuItem: { connect: { id: menuItemId } } })),
+      },
     },
+    include: promotionMenuInclude,
   });
+  return serializePromotion(promotion);
 };
 
 export const updatePromotion = async (
@@ -382,19 +629,31 @@ export const updatePromotion = async (
     where: { id: promotionId, restaurantId: restaurant.id },
   });
   if (!promo) throw Object.assign(new Error("Promotion not found"), { status: 404 });
-  return prisma.promotion.update({
+  const menuItemIds = input.menuItemIds !== undefined
+    ? await validatePromotionMenuItems(restaurant.id, input.menuItemIds)
+    : undefined;
+  if (menuItemIds !== undefined) validateMenuDiscount(menuItemIds, input.discountValue ?? promo.discountValue);
+  const promotion = await prisma.promotion.update({
     where: { id: promotionId },
     data: {
       ...(input.title && { title: input.title }),
       ...(input.description && { description: input.description }),
       ...(input.type && { type: input.type }),
       ...(input.discountValue !== undefined && { discountValue: input.discountValue }),
-      ...(input.startDate && { startDate: new Date(input.startDate) }),
-      ...(input.endDate && { endDate: new Date(input.endDate) }),
+      ...(input.startDate && { startDate: promotionDate(input.startDate) }),
+      ...(input.endDate && { endDate: promotionDate(input.endDate, true) }),
       ...(input.isActive !== undefined && { isActive: input.isActive }),
       ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
+      ...(menuItemIds !== undefined && {
+        menuItems: {
+          deleteMany: {},
+          create: menuItemIds.map((menuItemId) => ({ menuItem: { connect: { id: menuItemId } } })),
+        },
+      }),
     },
+    include: promotionMenuInclude,
   });
+  return serializePromotion(promotion);
 };
 
 export const deletePromotion = async (adminId: string, promotionId: string) => {
@@ -572,14 +831,55 @@ export const getMyHolidays = async (adminId: string) => {
   });
 };
 
-export const addHoliday = async (adminId: string, date: string, reason?: string) => {
+export interface ClosureInput {
+  date: string;
+  endDate?: string;
+  allDay?: boolean;
+  startTime?: string;
+  endTime?: string;
+  reason?: string;
+}
+
+export const addHoliday = async (adminId: string, input: ClosureInput) => {
   const restaurant = await prisma.restaurant.findFirst({ where: { adminId } });
   if (!restaurant) throw Object.assign(new Error("Restaurant not found"), { status: 404 });
-  const d = new Date(date);
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!datePattern.test(input.date) || (input.endDate && !datePattern.test(input.endDate))) {
+    throw Object.assign(new Error("Valid start and end dates are required"), { status: 400 });
+  }
+  const startDate = new Date(`${input.date}T00:00:00.000Z`);
+  const endDate = new Date(`${input.endDate ?? input.date}T00:00:00.000Z`);
+  if (endDate < startDate) {
+    throw Object.assign(new Error("End date cannot be before start date"), { status: 400 });
+  }
+  const allDay = input.allDay ?? true;
+  if (!allDay) {
+    if (!input.startTime || !input.endTime || !timePattern.test(input.startTime) || !timePattern.test(input.endTime)) {
+      throw Object.assign(new Error("Valid start and end times are required for a partial-day closure"), { status: 400 });
+    }
+    if (input.endTime <= input.startTime) {
+      throw Object.assign(new Error("End time must be later than start time"), { status: 400 });
+    }
+  }
   return prisma.restaurantHoliday.upsert({
-    where: { restaurantId_date: { restaurantId: restaurant.id, date: d } },
-    create: { restaurantId: restaurant.id, date: d, reason: reason ?? null },
-    update: { reason: reason ?? null },
+    where: { restaurantId_date: { restaurantId: restaurant.id, date: startDate } },
+    create: {
+      restaurantId: restaurant.id,
+      date: startDate,
+      endDate,
+      allDay,
+      startTime: allDay ? null : input.startTime,
+      endTime: allDay ? null : input.endTime,
+      reason: input.reason?.trim() || null,
+    },
+    update: {
+      endDate,
+      allDay,
+      startTime: allDay ? null : input.startTime,
+      endTime: allDay ? null : input.endTime,
+      reason: input.reason?.trim() || null,
+    },
   });
 };
 

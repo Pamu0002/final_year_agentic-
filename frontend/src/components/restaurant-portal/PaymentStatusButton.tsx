@@ -1,3 +1,4 @@
+// UI-only redesign: Restyled payment status button with smooth hover states and loading indicator
 "use client";
 
 import { useState } from "react";
@@ -46,18 +47,18 @@ export function PaymentStatusButton({ paymentId, currentStatus }: PaymentStatusB
       <Button
         size="sm"
         variant="outline"
-        className="text-green-600 border-green-600/40 hover:bg-green-600/10 hover:text-green-700 text-xs h-7 px-2"
+        className="h-8 rounded-xl border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-bold text-xs px-3 hover:bg-emerald-600 hover:text-white transition-all shadow-2xs"
         onClick={handleMarkPaid}
         disabled={loading}
       >
         {loading ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+          <Loader2 className="size-3.5 animate-spin mr-1.5" />
         ) : (
-          <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+          <CheckCircle2 className="size-3.5 mr-1.5" />
         )}
         Mark as Paid
       </Button>
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-[11px] font-semibold text-destructive">{error}</p>}
     </div>
   );
 }

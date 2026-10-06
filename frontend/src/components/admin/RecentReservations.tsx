@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
+import { ArrowUpRight, CalendarDays } from "lucide-react";
 
 interface Reservation {
   id: string;
@@ -36,16 +37,22 @@ interface RecentReservationsProps {
 
 export function RecentReservations({ reservations }: RecentReservationsProps) {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-base font-semibold">
-          Recent Reservations
-        </CardTitle>
+    <Card className="overflow-hidden">
+      <CardHeader className="flex flex-row items-center justify-between border-b border-border/70 py-5">
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 place-items-center rounded-xl bg-secondary text-secondary-foreground">
+            <CalendarDays className="size-4" />
+          </span>
+          <div>
+            <CardTitle className="text-lg font-semibold">Recent reservations</CardTitle>
+            <p className="mt-0.5 text-xs text-muted-foreground">Latest activity across all restaurants</p>
+          </div>
+        </div>
         <Link
           href="/admin/reservations"
-          className="text-sm text-blue-600 hover:underline"
+          className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
         >
-          View all
+          View all <ArrowUpRight className="size-3.5" />
         </Link>
       </CardHeader>
       <CardContent className="p-0">
@@ -62,8 +69,8 @@ export function RecentReservations({ reservations }: RecentReservationsProps) {
           <TableBody>
             {reservations.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  No reservations yet
+                <TableCell colSpan={5} className="h-36 text-center text-muted-foreground">
+                  No reservation activity yet
                 </TableCell>
               </TableRow>
             ) : (

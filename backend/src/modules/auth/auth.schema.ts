@@ -14,6 +14,7 @@ export const RegisterBodySchema = z
     cuisines: z.array(z.string()).optional(),
     dietaryRestrictions: z.array(z.string()).optional(),
     budgetPreference: z.enum(["BUDGET", "MODERATE", "EXPENSIVE", "FINE_DINING"]).optional(),
+    role: z.enum(["CUSTOMER", "RESTAURANT_ADMIN", "SYSTEM_ADMIN"]).optional(),
   })
   .openapi("RegisterBody");
 

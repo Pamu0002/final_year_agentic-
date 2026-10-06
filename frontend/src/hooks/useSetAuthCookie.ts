@@ -1,20 +1,47 @@
 "use client";
 
 import { useEffect } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { onIdTokenChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { AUTH_COOKIE, COOKIE_MAX_AGE } from "@/lib/cookie";
+import { clearAuthCookie, refreshAuthToken, writeAuthCookie } from "@/lib/client/auth-token";
 
 export function useSetAuthCookie() {
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const syncToken = async (forceRefresh = false) => {
+      try {
+        await refreshAuthToken(forceRefresh);
+      } catch (error) {
+        console.error("Unable to refresh Firebase authentication token", error);
+      }
+    };
+
+    const unsubscribe = onIdTokenChanged(auth, async (user) => {
       if (user) {
-        const token = await user.getIdToken();
-        document.cookie = `${AUTH_COOKIE}=${token}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
+        try {
+          await writeAuthCookie(user);
+        } catch (error) {
+          console.error("Unable to update authentication cookie", error);
+        }
       } else {
-        document.cookie = `${AUTH_COOKIE}=; path=/; max-age=0`;
+        clearAuthCookie();
       }
     });
-    return () => unsubscribe();
+
+    // Firebase ID tokens expire after one hour. Refresh before expiry and also
+    // whenever the user returns to a backgrounded tab.
+    const timer = window.setInterval(() => void syncToken(true), 45 * 60 * 1000);
+    const onFocus = () => void syncToken();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void syncToken();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      unsubscribe();
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, []);
 }

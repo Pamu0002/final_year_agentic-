@@ -1,9 +1,11 @@
+// UI-only redesign: Restyled restaurant image uploader section with photo cards and feedback toasts
 "use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ImageUploader, MultiImageUploader } from "./ImageUploader";
 import { Button } from "@/components/ui/button";
+import { CheckCircle2, Save } from "lucide-react";
 
 interface Props {
   initialImages: string[];
@@ -33,22 +35,21 @@ export function RestaurantImageManager({
       body: JSON.stringify({ imageUrls: images, profileImageUrl, coverImageUrl }),
     });
     setSaving(false);
-    if (!res.ok) { setError("Failed to save"); return; }
+    if (!res.ok) { setError("Failed to save photos"); return; }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     router.refresh();
   };
 
   return (
-    <div className="space-y-6">
-
+    <div className="space-y-6 pt-2">
       {/* Profile Image */}
       <div className="space-y-2">
         <div>
-          <p className="text-sm font-medium text-foreground">Profile Image</p>
-          <p className="text-xs text-muted-foreground">Shown as the restaurant logo / avatar on cards and the detail page.</p>
+          <p className="text-xs font-bold text-foreground">Profile Logo / Avatar</p>
+          <p className="text-[0.68rem] text-muted-foreground">Shown as the restaurant logo on search cards and detail headers.</p>
         </div>
-        <div className="max-w-[200px]">
+        <div className="max-w-[180px]">
           <ImageUploader
             endpoint="restaurantImage"
             value={profileImageUrl}
@@ -62,8 +63,8 @@ export function RestaurantImageManager({
       {/* Cover Image */}
       <div className="space-y-2">
         <div>
-          <p className="text-sm font-medium text-foreground">Cover Image</p>
-          <p className="text-xs text-muted-foreground">Full-width hero banner shown at the top of your restaurant page.</p>
+          <p className="text-xs font-bold text-foreground">Cover Banner Photo</p>
+          <p className="text-[0.68rem] text-muted-foreground">Full-width hero banner shown at the top of your restaurant profile.</p>
         </div>
         <ImageUploader
           endpoint="restaurantImage"
@@ -77,16 +78,30 @@ export function RestaurantImageManager({
       {/* Gallery */}
       <div className="space-y-2">
         <div>
-          <p className="text-sm font-medium text-foreground">Photo Gallery</p>
-          <p className="text-xs text-muted-foreground">Additional photos displayed in the gallery grid on your restaurant page.</p>
+          <p className="text-xs font-bold text-foreground">Photo Gallery</p>
+          <p className="text-[0.68rem] text-muted-foreground">Additional interior, dining room, and dish photos displayed in your gallery.</p>
         </div>
         <MultiImageUploader value={images} onChange={setImages} />
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button size="sm" onClick={handleSave} disabled={saving}>
-        {saving ? "Saving…" : saved ? "Saved!" : "Save All Photos"}
-      </Button>
+      {error && <p className="text-xs font-bold text-destructive">{error}</p>}
+      
+      <div className="flex items-center gap-3 pt-2">
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-xl bg-primary hover:bg-primary text-white font-bold text-xs px-5 h-10 shadow-sm"
+        >
+          <Save className="size-4 mr-1.5" />
+          {saving ? "Saving…" : saved ? "Saved!" : "Save All Photos"}
+        </Button>
+        {saved && (
+          <span className="flex items-center gap-1.5 text-xs font-bold text-primary dark:text-[#D4B57D]">
+            <CheckCircle2 className="size-4" /> Imagery updated successfully!
+          </span>
+        )}
+      </div>
     </div>
   );
 }

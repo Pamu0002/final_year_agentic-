@@ -1,8 +1,19 @@
 node_modules/
 .env
+.env.*
+!.env.example
 __pycache__/
 *.pyc
 .venv/
+venv/
 dist/
 build/
 .next/
+
+# Local credentials and generated service configuration
+credentials/*
+!credentials/.gitignore
+mobile/android/app/google-services.json
+mobile/ios/Runner/GoogleService-Info.plist
+mobile/config/*.json
+!mobile/config/example.json

@@ -15,6 +15,7 @@ import portalRoutes from "./modules/restaurant-portal/portal.routes.js";
 import waitlistRoutes from "./modules/waitlist/waitlist.routes.js";
 import uploadRoutes from "./modules/upload/upload.routes.js";
 import agentDemoRoutes from "./modules/agent-demo/agent-demo.routes.js";
+import * as paymentController from "./modules/payment/payment.controller.js";
 
 const app = express();
 
@@ -23,6 +24,15 @@ app.use(cors({
   origin: `http://localhost:${process.env.FRONTEND_PORT || 3001}`,
   credentials: true,
 }));
+
+// Stripe must receive the untouched request body to verify its signature.
+// Register this endpoint before express.json(); all other routes use JSON.
+app.post(
+  "/api/payments/webhook",
+  express.raw({ type: "application/json" }),
+  paymentController.handleWebhook,
+);
+
 app.use(express.json());
 app.use(rateLimiter);
 

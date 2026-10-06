@@ -19,7 +19,7 @@ export function RevenueTrendChart({ data }: RevenueTrendChartProps) {
   return (
     <ResponsiveContainer width="100%" height={250}>
       <AreaChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
         <XAxis
           dataKey="date"
           tick={{ fontSize: 12 }}
@@ -41,8 +41,9 @@ export function RevenueTrendChart({ data }: RevenueTrendChartProps) {
         <Area
           type="monotone"
           dataKey="amount"
-          stroke="#10b981"
-          fill="#10b98122"
+          stroke="var(--chart-1)"
+          fill="var(--chart-1)"
+          fillOpacity={0.12}
           strokeWidth={2}
           name="Revenue"
         />

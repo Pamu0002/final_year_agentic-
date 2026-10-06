@@ -8,24 +8,24 @@ datasource db {
 }
 
 model User {
-  id                 String        @id @default(uuid())
-  firebaseUid        String        @unique
-  email              String        @unique
+  id                 String          @id @default(uuid())
+  firebaseUid        String          @unique
+  email              String          @unique
   name               String?
   phone              String?
   avatarUrl          String?
   dateOfBirth        DateTime?
   preferredLanguage  String?
-  isActive           Boolean       @default(true)
+  isActive           Boolean         @default(true)
   diningPreferences  Json?
-  role               Role          @default(CUSTOMER)
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  role               Role            @default(CUSTOMER)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
   reservations       Reservation[]
   payments           Payment[]
   reviews            Review[]
   chatSessions       ChatSession[]
-  managedRestaurants Restaurant[]  @relation("RestaurantAdmin")
+  managedRestaurants Restaurant[]    @relation("RestaurantAdmin")
   favorites          Favorite[]
   notifications      Notification[]
   waitlistEntries    Waitlist[]
@@ -41,42 +41,44 @@ enum Role {
 }
 
 model Restaurant {
-  id            String        @id @default(uuid())
-  name          String
-  description   String?
-  address       String
-  area          String
-  phone         String?
-  email         String?
-  website       String?
-  cuisineTypes  String        @default("[]")
-  priceRange    PriceRange
-  openingHours  Json
-  imageUrls       String        @default("[]")
+  id              String                   @id @default(uuid())
+  name            String
+  description     String?
+  address         String
+  area            String
+  phone           String?
+  email           String?
+  website         String?
+  cuisineTypes    String                   @default("[]")
+  priceRange      PriceRange
+  openingHours    Json
+  imageUrls       String                   @default("[]")
   profileImageUrl String?
   coverImageUrl   String?
-  isActive        Boolean       @default(true)
-  isVerified    Boolean       @default(false)
-  avgRating     Float?
-  totalReviews  Int           @default(0)
-  latitude      Float?
-  longitude     Float?
-  socialMedia   Json?
-  totalSeats    Int?
-  maxCapacity   Int           @default(10)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  adminId       String
-  admin         User          @relation("RestaurantAdmin", fields: [adminId], references: [id])
-  menuItems     MenuItem[]
-  reservations  Reservation[]
-  reviews       Review[]
-  favorites     Favorite[]
+  isActive        Boolean                  @default(true)
+  isVerified      Boolean                  @default(false)
+  avgRating       Float?
+  totalReviews    Int                      @default(0)
+  latitude        Float?
+  longitude       Float?
+  socialMedia     Json?
+  totalSeats      Int?
+  maxCapacity     Int                      @default(10)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  adminId         String
+  admin           User                     @relation("RestaurantAdmin", fields: [adminId], references: [id])
+  menuItems       MenuItem[]
+  reservations    Reservation[]
+  reviews         Review[]
+  favorites       Favorite[]
   waitlistEntries Waitlist[]
-  promotions    Promotion[]
-  reviewReplies ReviewReply[]
-  holidays      RestaurantHoliday[]
-  complaints    Complaint[]
+  promotions      Promotion[]
+  reviewReplies   ReviewReply[]
+  holidays        RestaurantHoliday[]
+  tables          RestaurantTable[]
+  slotOverrides   RestaurantSlotOverride[]
+  complaints      Complaint[]
 
   @@index([area])
 }
@@ -89,37 +91,43 @@ enum PriceRange {
 }
 
 model MenuItem {
-  id           String     @id @default(uuid())
+  id           String              @id @default(uuid())
   restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  restaurant   Restaurant          @relation(fields: [restaurantId], references: [id])
   name         String
   description  String?
   price        Float
   category     String
-  dietaryInfo  String     @default("[]")
-  isAvailable  Boolean    @default(true)
+  dietaryInfo  String              @default("[]")
+  isAvailable  Boolean             @default(true)
   imageUrl     String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  promotions   PromotionMenuItem[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
 }
 
 model Reservation {
-  id              String            @id @default(uuid())
-  userId          String
-  user            User              @relation(fields: [userId], references: [id])
-  restaurantId    String
-  restaurant      Restaurant        @relation(fields: [restaurantId], references: [id])
-  date            DateTime
-  time            String
-  partySize       Int
-  specialRequests String?
-  status          ReservationStatus @default(PENDING)
-  reminderSent    Boolean           @default(false)
-  firestoreId     String?           @unique
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  payment         Payment?
-  review          Review?
+  id                 String            @id @default(uuid())
+  userId             String
+  user               User              @relation(fields: [userId], references: [id])
+  restaurantId       String
+  restaurant         Restaurant        @relation(fields: [restaurantId], references: [id])
+  date               DateTime
+  time               String
+  partySize          Int
+  specialRequests    String?
+  status             ReservationStatus @default(PENDING)
+  reminderSent       Boolean           @default(false)
+  cancelledAt        DateTime?
+  cancelledBy        String?
+  cancellationReason String?
+  holdExpiresAt      DateTime?
+  confirmationExpiresAt DateTime?
+  firestoreId        String?           @unique
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  payment            Payment?
+  review             Review?
 }
 
 enum ReservationStatus {
@@ -287,22 +295,33 @@ enum WaitlistStatus {
 }
 
 model Promotion {
-  id            String        @id @default(uuid())
+  id            String              @id @default(uuid())
   restaurantId  String
-  restaurant    Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurant    Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   title         String
   description   String
   type          PromotionType
   discountValue Float?
   startDate     DateTime
   endDate       DateTime
-  isActive      Boolean       @default(true)
+  isActive      Boolean             @default(true)
   imageUrl      String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  menuItems     PromotionMenuItem[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   @@index([restaurantId, isActive])
   @@index([endDate])
+}
+
+model PromotionMenuItem {
+  promotionId String
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  menuItemId  String
+  menuItem    MenuItem  @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@id([promotionId, menuItemId])
+  @@index([menuItemId])
 }
 
 enum PromotionType {
@@ -318,11 +337,45 @@ model RestaurantHoliday {
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   date         DateTime   @db.Date
+  endDate      DateTime?  @db.Date
+  allDay       Boolean    @default(true)
+  startTime    String?
+  endTime      String?
   reason       String?
   createdAt    DateTime   @default(now())
 
   @@unique([restaurantId, date])
   @@index([restaurantId])
+}
+
+model RestaurantTable {
+  id           String     @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  capacity     Int
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([restaurantId, name])
+  @@index([restaurantId, isActive])
+}
+
+model RestaurantSlotOverride {
+  id           String     @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  date         DateTime
+  time         String
+  capacity     Int?
+  isBlocked    Boolean    @default(false)
+  note         String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([restaurantId, date, time])
+  @@index([restaurantId, date])
 }
 
 model Complaint {

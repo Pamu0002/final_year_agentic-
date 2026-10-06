@@ -1,6 +1,6 @@
 import { prisma } from "../../../lib/db.js";
 import { adminFirestore } from "../../config/firebase.js";
-import type { PriceRange, Restaurant } from "../../../generated/prisma/client.js";
+import type { PriceRange, Restaurant, RestaurantHoliday } from "../../../generated/prisma/client.js";
 import type { z } from "zod";
 import type {
   RestaurantQuerySchema,
@@ -8,11 +8,76 @@ import type {
   UpdateRestaurantBodySchema,
   ReviewQuerySchema,
 } from "./restaurant.schema.js";
+import { ACTIVE_CAPACITY_STATUSES, getMatchingClosure, getOpeningTimeSlots } from "../reservation/availability.js";
+import { RESERVATION_DEPOSIT_LKR } from "../../config/payments.js";
 
 export type RestaurantFilters = Partial<z.infer<typeof RestaurantQuerySchema>>;
 export type CreateRestaurantInput = z.infer<typeof CreateRestaurantBodySchema>;
 export type UpdateRestaurantInput = z.infer<typeof UpdateRestaurantBodySchema>;
 export type ReviewQueryInput = z.infer<typeof ReviewQuerySchema>;
+
+const COLOMBO_TIME_ZONE = "Asia/Colombo";
+
+const getColomboDateAndTime = () => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: COLOMBO_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    date: `${value("year")}-${value("month")}-${value("day")}`,
+    time: `${value("hour")}:${value("minute")}`,
+  };
+};
+
+const getTodayClosureQuery = (today: Date) => ({
+  holidays: {
+    where: {
+      date: { lte: today },
+      OR: [
+        { date: today, endDate: null },
+        { endDate: { gte: today } },
+      ],
+    },
+    orderBy: { date: "asc" as const },
+  },
+});
+
+const withClosureStatus = (record: Restaurant & { holidays: RestaurantHoliday[] }, currentTime: string) => {
+  const { holidays, ...restaurant } = record;
+  const activeClosure = getMatchingClosure(holidays, currentTime);
+  const scheduledClosure = activeClosure ?? holidays[0];
+
+  if (!scheduledClosure) {
+    return { ...parseRestaurant(restaurant), closureStatus: null };
+  }
+
+  const isClosedNow = Boolean(activeClosure);
+  const label = scheduledClosure.allDay
+    ? "Closed today"
+    : isClosedNow
+      ? `Closed until ${scheduledClosure.endTime}`
+      : `Closed ${scheduledClosure.startTime}-${scheduledClosure.endTime}`;
+
+  return {
+    ...parseRestaurant(restaurant),
+    closureStatus: {
+      isClosedNow,
+      allDay: scheduledClosure.allDay,
+      label,
+      reason: scheduledClosure.reason,
+      startTime: scheduledClosure.startTime,
+      endTime: scheduledClosure.endTime,
+      startDate: scheduledClosure.date.toISOString().slice(0, 10),
+      endDate: (scheduledClosure.endDate ?? scheduledClosure.date).toISOString().slice(0, 10),
+    },
+  };
+};
 
 // Haversine distance in km between two lat/lng points.
 const distanceKm = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -29,6 +94,9 @@ export const listRestaurants = async (filters: RestaurantFilters = {}) => {
   const page = filters.page ?? 1;
   const limit = filters.limit ?? 20;
   const skip = (page - 1) * limit;
+  const colomboNow = getColomboDateAndTime();
+  const today = new Date(`${colomboNow.date}T00:00:00.000Z`);
+  const closureInclude = getTodayClosureQuery(today);
 
   const where: Record<string, unknown> = { isActive: true };
   if (filters.area) where["area"] = { contains: filters.area, mode: "insensitive" };
@@ -50,6 +118,7 @@ export const listRestaurants = async (filters: RestaurantFilters = {}) => {
     const { lat, lng, radiusKm } = filters;
     const all = await prisma.restaurant.findMany({
       where: { ...where, latitude: { not: null }, longitude: { not: null } },
+      include: closureInclude,
     });
     const withDistance = all
       .map((r) => ({ ...r, distanceKm: distanceKm(lat, lng, r.latitude!, r.longitude!) }))
@@ -59,7 +128,10 @@ export const listRestaurants = async (filters: RestaurantFilters = {}) => {
     const total = withDistance.length;
     const page_ = withDistance.slice(skip, skip + limit);
     return {
-      data: page_.map((r) => ({ ...parseRestaurant(r), distanceKm: Math.round(r.distanceKm * 10) / 10 })),
+      data: page_.map((r) => ({
+        ...withClosureStatus(r, colomboNow.time),
+        distanceKm: Math.round(r.distanceKm * 10) / 10,
+      })),
       total,
       page,
       limit,
@@ -69,6 +141,7 @@ export const listRestaurants = async (filters: RestaurantFilters = {}) => {
   const [restaurants, total] = await Promise.all([
     prisma.restaurant.findMany({
       where,
+      include: closureInclude,
       orderBy: { avgRating: "desc" },
       skip,
       take: limit,
@@ -76,7 +149,12 @@ export const listRestaurants = async (filters: RestaurantFilters = {}) => {
     prisma.restaurant.count({ where }),
   ]);
 
-  return { data: restaurants.map(parseRestaurant), total, page, limit };
+  return {
+    data: restaurants.map((restaurant) => withClosureStatus(restaurant, colomboNow.time)),
+    total,
+    page,
+    limit,
+  };
 };
 
 export const getRestaurantById = async (id: string) => {
@@ -116,29 +194,45 @@ export const getAvailability = async (restaurantId: string, date: string): Promi
   return doc.exists ? (doc.data()?.slots ?? []) : [];
 };
 
-const pad = (n: number) => String(n).padStart(2, "0");
-
-const DEFAULT_TIME_SLOTS: string[] = (() => {
-  const slots: string[] = [];
-  for (let h = 9; h <= 21; h++) {
-    slots.push(`${pad(h)}:00`);
-    slots.push(`${pad(h)}:30`);
-  }
-  return slots;
-})();
-
 export const getSlotCapacity = async (restaurantId: string, date: string, partySize?: number) => {
-  const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
+  const dateValue = new Date(date);
+  const now = new Date();
+  const restaurant = await prisma.restaurant.findUnique({
+    where: { id: restaurantId },
+    include: { tables: { where: { isActive: true }, select: { capacity: true } } },
+  });
   if (!restaurant) return null;
 
-  const reservations = await prisma.reservation.findMany({
-    where: {
-      restaurantId,
-      date: new Date(date),
-      status: { in: ["PENDING", "CONFIRMED"] },
-    },
-    select: { time: true, partySize: true },
-  });
+  const [reservations, closures, overrides] = await Promise.all([
+    prisma.reservation.findMany({
+      where: {
+        restaurantId,
+        date: dateValue,
+        OR: [
+          { status: { in: [...ACTIVE_CAPACITY_STATUSES] } },
+          {
+            status: "PENDING",
+            OR: [
+              { holdExpiresAt: { gt: now } },
+              { confirmationExpiresAt: { gt: now } },
+            ],
+          },
+        ],
+      },
+      select: { time: true, partySize: true },
+    }),
+    prisma.restaurantHoliday.findMany({
+      where: {
+        restaurantId,
+        date: { lte: dateValue },
+        OR: [
+          { endDate: null, date: dateValue },
+          { endDate: { gte: dateValue } },
+        ],
+      },
+    }),
+    prisma.restaurantSlotOverride.findMany({ where: { restaurantId, date: dateValue } }),
+  ]);
 
   const bookedByTime = new Map<string, number>();
   for (const r of reservations) {
@@ -146,14 +240,27 @@ export const getSlotCapacity = async (restaurantId: string, date: string, partyS
   }
 
   const needed = partySize ?? 1;
-  return DEFAULT_TIME_SLOTS.map((time) => {
+  const tableCapacity = restaurant.tables.reduce((sum, table) => sum + table.capacity, 0);
+  const baseCapacity = tableCapacity || restaurant.maxCapacity;
+  const openingSlots = getOpeningTimeSlots(restaurant.openingHours, date);
+  const overridesByTime = new Map(overrides.map((override) => [override.time, override]));
+  const times = [...new Set([...openingSlots, ...overrides.map((override) => override.time)])].sort();
+
+  return times.map((time) => {
     const bookedSeats = bookedByTime.get(time) ?? 0;
-    const remaining = restaurant.maxCapacity - bookedSeats;
+    const override = overridesByTime.get(time);
+    const maxCapacity = override?.capacity ?? baseCapacity;
+    const remainingSeats = Math.max(0, maxCapacity - bookedSeats);
+    const closure = getMatchingClosure(closures, time);
+    const isBlocked = Boolean(closure || override?.isBlocked);
     return {
       time,
       bookedSeats,
-      maxCapacity: restaurant.maxCapacity,
-      available: remaining >= needed,
+      remainingSeats,
+      maxCapacity,
+      available: !isBlocked && remainingSeats >= needed,
+      isBlocked,
+      reason: closure?.reason ?? override?.note ?? (isBlocked ? "Unavailable" : null),
     };
   });
 };
@@ -193,10 +300,15 @@ export const getRestaurantReviews = async (restaurantId: string, opts: ReviewQue
 
 export const getActivePromotions = async (restaurantId: string) => {
   const now = new Date();
-  return prisma.promotion.findMany({
+  const promotions = await prisma.promotion.findMany({
     where: { restaurantId, isActive: true, startDate: { lte: now }, endDate: { gte: now } },
     orderBy: { createdAt: "desc" },
+    include: { menuItems: { include: { menuItem: true } } },
   });
+  return promotions.map((promotion) => ({
+    ...promotion,
+    menuItems: promotion.menuItems.map((entry) => entry.menuItem),
+  }));
 };
 
 export const getAllActivePromotions = async () => {
@@ -208,10 +320,12 @@ export const getAllActivePromotions = async () => {
       restaurant: {
         select: { id: true, name: true, area: true, cuisineTypes: true, imageUrls: true, priceRange: true },
       },
+      menuItems: { include: { menuItem: true } },
     },
   });
   return promotions.map((p) => ({
     ...p,
+    menuItems: p.menuItems.map((entry) => entry.menuItem),
     restaurant: {
       ...p.restaurant,
       cuisineTypes: JSON.parse(p.restaurant.cuisineTypes) as string[],
@@ -226,4 +340,5 @@ const parseRestaurant = (r: Restaurant) => ({
   ...r,
   cuisineTypes: JSON.parse(r.cuisineTypes) as string[],
   imageUrls: JSON.parse(r.imageUrls) as string[],
+  reservationDeposit: RESERVATION_DEPOSIT_LKR,
 });

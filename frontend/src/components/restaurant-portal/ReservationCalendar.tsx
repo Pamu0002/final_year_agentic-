@@ -1,10 +1,12 @@
+// UI-only redesign: Restyled reservation calendar view with refined grid, badges, and detail drawer
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Clock, Users, CalendarDays, Utensils } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { refreshAuthToken } from "@/lib/client/auth-token";
 
 interface OrderItem {
   name: string;
@@ -24,11 +26,11 @@ interface Reservation {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  PENDING: "bg-yellow-400",
-  CONFIRMED: "bg-green-500",
-  COMPLETED: "bg-muted-foreground",
-  CANCELLED: "bg-red-400",
-  NO_SHOW: "bg-red-600",
+  PENDING: "bg-amber-500 text-white",
+  CONFIRMED: "bg-emerald-600 text-white",
+  COMPLETED: "bg-slate-600 text-white",
+  CANCELLED: "bg-rose-600 text-white",
+  NO_SHOW: "bg-orange-600 text-white",
 };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -69,7 +71,10 @@ export function ReservationCalendar() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { void fetchMonth(year, month); }, [year, month, fetchMonth]);
+  useEffect(() => {
+    const initialFetch = window.setTimeout(() => void fetchMonth(year, month), 0);
+    return () => window.clearTimeout(initialFetch);
+  }, [year, month, fetchMonth]);
 
   const prevMonth = () => {
     if (month === 0) { setYear(y => y - 1); setMonth(11); }
@@ -102,37 +107,46 @@ export function ReservationCalendar() {
 
   const updateStatus = async (id: string, status: string) => {
     setUpdatingId(id);
-    await fetch(`/api/proxy/restaurant-portal/reservations/${id}/status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    await fetchMonth(year, month);
-    setUpdatingId(null);
-    router.refresh();
+    try {
+      const token = await refreshAuthToken(true);
+      if (!token) return;
+      const response = await fetch(`/api/proxy/restaurant-portal/reservations/${id}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) return;
+      await fetchMonth(year, month);
+      router.refresh();
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
   return (
-    <div className="flex gap-6">
-      {/* Calendar */}
-      <div className="flex-1 rounded-xl border bg-card shadow-sm overflow-hidden">
+    <div className="flex flex-col xl:flex-row gap-6">
+      {/* Calendar Grid */}
+      <div className="flex-1 rounded-2xl border border-border/80 bg-card shadow-sm overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <button onClick={prevMonth} className="p-1 rounded hover:bg-muted">
-            <ChevronLeft className="h-5 w-5 text-muted-foreground" />
-          </button>
-          <h2 className="text-lg font-semibold text-foreground">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border/70 bg-muted/30">
+          <Button variant="ghost" size="icon" onClick={prevMonth} className="size-8 rounded-xl hover:bg-muted">
+            <ChevronLeft className="size-4 text-muted-foreground" />
+          </Button>
+          <h2 className="font-heading text-lg font-bold text-foreground">
             {MONTHS[month]} {year}
           </h2>
-          <button onClick={nextMonth} className="p-1 rounded hover:bg-muted">
-            <ChevronRight className="h-5 w-5 text-muted-foreground" />
-          </button>
+          <Button variant="ghost" size="icon" onClick={nextMonth} className="size-8 rounded-xl hover:bg-muted">
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </Button>
         </div>
 
         {/* Day labels */}
-        <div className="grid grid-cols-7 border-b">
+        <div className="grid grid-cols-7 border-b border-border/70 bg-muted/20 text-center font-bold text-xs uppercase tracking-wider text-muted-foreground">
           {DAYS.map((d) => (
-            <div key={d} className="py-2 text-center text-xs font-medium text-muted-foreground">
+            <div key={d} className="py-2.5">
               {d}
             </div>
           ))}
@@ -140,13 +154,13 @@ export function ReservationCalendar() {
 
         {/* Grid */}
         {loading ? (
-          <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-            Loading…
+          <div className="flex items-center justify-center h-72 text-muted-foreground text-sm font-medium animate-pulse">
+            Loading reservations calendar…
           </div>
         ) : (
-          <div className="grid grid-cols-7">
+          <div className="grid grid-cols-7 divide-x divide-y divide-border/60">
             {cells.map((day, i) => {
-              if (!day) return <div key={i} className="border-b border-r min-h-[90px] bg-muted/30" />;
+              if (!day) return <div key={i} className="min-h-[96px] bg-muted/15" />;
 
               const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
               const dayRes = byDate[dateStr] ?? [];
@@ -157,30 +171,34 @@ export function ReservationCalendar() {
                 <div
                   key={i}
                   onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                  className={`border-b border-r min-h-[90px] p-2 cursor-pointer transition-colors ${
+                  className={`min-h-[96px] p-2 cursor-pointer transition-all duration-150 ${
                     isSelected
-                      ? "bg-blue-50 ring-2 ring-inset ring-blue-400"
-                      : "hover:bg-muted/50"
+                      ? "bg-emerald-500/10 ring-2 ring-inset ring-emerald-500 dark:bg-emerald-950/30"
+                      : "hover:bg-muted/40"
                   }`}
                 >
-                  <div className={`text-sm font-medium mb-1 w-7 h-7 flex items-center justify-center rounded-full ${
-                    isToday ? "bg-blue-600 text-white" : "text-foreground"
+                  <div className={`text-xs font-bold mb-1.5 size-7 flex items-center justify-center rounded-xl transition-all ${
+                    isToday
+                      ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-600/30"
+                      : "text-foreground"
                   }`}>
                     {day}
                   </div>
 
                   {dayRes.length > 0 && (
-                    <div className="space-y-0.5">
-                      {dayRes.slice(0, 3).map((r) => (
+                    <div className="space-y-1">
+                      {dayRes.slice(0, 2).map((r) => (
                         <div
                           key={r.id}
-                          className={`text-xs text-white rounded px-1 py-0.5 truncate ${STATUS_COLORS[r.status] ?? "bg-muted-foreground"}`}
+                          className={`text-[0.66rem] font-bold rounded-md px-1.5 py-0.5 truncate shadow-2xs ${STATUS_COLORS[r.status] ?? "bg-muted-foreground text-white"}`}
                         >
                           {r.time} · {r.user.name ?? r.user.email.split("@")[0]}
                         </div>
                       ))}
-                      {dayRes.length > 3 && (
-                        <div className="text-xs text-muted-foreground pl-1">+{dayRes.length - 3} more</div>
+                      {dayRes.length > 2 && (
+                        <div className="text-[0.66rem] font-extrabold text-emerald-600 dark:text-emerald-400 pl-1">
+                          +{dayRes.length - 2} more
+                        </div>
                       )}
                     </div>
                   )}
@@ -191,73 +209,79 @@ export function ReservationCalendar() {
         )}
 
         {/* Legend */}
-        <div className="flex flex-wrap gap-3 px-6 py-3 border-t bg-muted/50 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-4 px-6 py-3 border-t border-border/70 bg-muted/20 text-xs font-semibold text-muted-foreground">
           {Object.entries(STATUS_COLORS).map(([s, cls]) => (
             <div key={s} className="flex items-center gap-1.5">
-              <span className={`inline-block w-2.5 h-2.5 rounded-sm ${cls}`} />
-              {s}
+              <span className={`inline-block size-2.5 rounded-full ${cls}`} />
+              <span>{s}</span>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Side panel */}
+      {/* Side detail panel */}
       {selectedDate && (
-        <div className="w-80 rounded-xl border bg-card shadow-sm flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/50">
-            <span className="font-semibold text-foreground text-sm">
+        <div className="w-full xl:w-96 rounded-2xl border border-border/80 bg-card shadow-lg flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border/70 bg-muted/30">
+            <span className="font-heading text-sm font-bold text-foreground flex items-center gap-2">
+              <CalendarDays className="size-4 text-emerald-600" />
               {new Date(selectedDate + "T00:00:00").toLocaleDateString(undefined, {
                 weekday: "long", month: "long", day: "numeric",
               })}
             </span>
-            <button onClick={() => setSelectedDate(null)} className="p-1 rounded hover:bg-muted">
-              <X className="h-4 w-4 text-muted-foreground" />
-            </button>
+            <Button variant="ghost" size="icon" onClick={() => setSelectedDate(null)} className="size-7 rounded-lg hover:bg-muted">
+              <X className="size-4 text-muted-foreground" />
+            </Button>
           </div>
 
           {selectedReservations.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-              No reservations
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-muted-foreground text-sm text-center gap-2">
+              <CalendarDays className="size-8 opacity-40" />
+              <p className="font-semibold text-foreground">No bookings on this day</p>
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto divide-y">
+            <div className="flex-1 overflow-y-auto divide-y divide-border/60 max-h-[500px]">
               {selectedReservations
                 .sort((a, b) => a.time.localeCompare(b.time))
                 .map((r) => (
-                  <div key={r.id} className="p-4 space-y-2">
+                  <div key={r.id} className="p-4 space-y-3 hover:bg-muted/20 transition-colors">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <div className="font-medium text-sm text-foreground">
+                        <div className="font-bold text-sm text-foreground">
                           {r.user.name ?? r.user.email}
                         </div>
                         <div className="text-xs text-muted-foreground">{r.user.phone ?? r.user.email}</div>
                       </div>
-                      <Badge variant={STATUS_VARIANT[r.status] ?? "secondary"} className="text-xs shrink-0">
+                      <Badge variant={STATUS_VARIANT[r.status] ?? "secondary"} className="text-[0.68rem] font-bold uppercase tracking-wider shrink-0">
                         {r.status}
                       </Badge>
                     </div>
 
-                    <div className="text-xs text-muted-foreground flex gap-3">
-                      <span>🕐 {r.time}</span>
-                      <span>👥 {r.partySize} guests</span>
+                    <div className="text-xs font-semibold text-muted-foreground flex gap-4">
+                      <span className="flex items-center gap-1"><Clock className="size-3 text-emerald-600" /> {r.time}</span>
+                      <span className="flex items-center gap-1"><Users className="size-3 text-emerald-600" /> {r.partySize} guests</span>
                     </div>
 
                     {r.specialRequests && (
-                      <div className="text-xs text-muted-foreground italic">"{r.specialRequests}"</div>
+                      <div className="text-xs text-muted-foreground italic bg-muted/40 p-2 rounded-lg border border-border/50">
+                        &ldquo;{r.specialRequests}&rdquo;
+                      </div>
                     )}
 
                     {r.payment?.orderItems && r.payment.orderItems.length > 0 && (
-                      <div className="rounded-md border border-border bg-muted/30 p-2 space-y-1">
-                        <div className="text-xs font-medium text-foreground">Pre-Order</div>
+                      <div className="rounded-xl border border-border/80 bg-muted/30 p-3 space-y-1.5">
+                        <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                          <Utensils className="size-3 text-emerald-600" /> Pre-Order Summary
+                        </div>
                         {r.payment.orderItems.map((item, i) => (
                           <div key={i} className="flex justify-between text-xs text-muted-foreground">
-                            <span><span className="text-foreground">{item.quantity}×</span> {item.name}</span>
-                            <span>LKR {(item.price * item.quantity).toLocaleString()}</span>
+                            <span><span className="font-bold text-foreground">{item.quantity}×</span> {item.name}</span>
+                            <span className="font-mono text-foreground">LKR {(item.price * item.quantity).toLocaleString()}</span>
                           </div>
                         ))}
-                        <div className="flex justify-between text-xs font-medium text-foreground border-t border-border pt-1 mt-1">
-                          <span>Total</span>
-                          <span>LKR {r.payment.amount.toLocaleString()}</span>
+                        <div className="flex justify-between text-xs font-bold text-foreground border-t border-border/60 pt-1.5 mt-1.5">
+                          <span>Total Paid</span>
+                          <span className="text-emerald-600 dark:text-emerald-400">LKR {r.payment.amount.toLocaleString()}</span>
                         </div>
                       </div>
                     )}
@@ -266,7 +290,7 @@ export function ReservationCalendar() {
                       defaultValue={r.status}
                       disabled={updatingId === r.id}
                       onChange={(e) => updateStatus(r.id, e.target.value)}
-                      className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs font-medium disabled:opacity-50"
+                      className="w-full rounded-xl border border-border/80 bg-background px-3 py-1.5 text-xs font-bold text-foreground focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
                     >
                       {["PENDING","CONFIRMED","COMPLETED","CANCELLED","NO_SHOW"].map((s) => (
                         <option key={s} value={s}>{s}</option>
@@ -277,7 +301,7 @@ export function ReservationCalendar() {
             </div>
           )}
 
-          <div className="px-4 py-3 border-t bg-muted/50 text-xs text-muted-foreground">
+          <div className="px-4 py-3 border-t border-border/70 bg-muted/30 text-xs font-bold text-muted-foreground">
             {selectedReservations.length} reservation{selectedReservations.length !== 1 ? "s" : ""}
             {" · "}
             {selectedReservations.reduce((n, r) => n + r.partySize, 0)} total guests

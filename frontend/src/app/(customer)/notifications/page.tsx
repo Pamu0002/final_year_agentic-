@@ -23,21 +23,13 @@ export default async function NotificationsPage() {
   ).catch(() => ({ data: [], total: 0, unreadCount: 0 }));
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-semibold">Notifications</h1>
-          {result.unreadCount > 0 && (
-            <span className="text-xs text-muted-foreground">
-              {result.unreadCount} unread
-            </span>
-          )}
-        </div>
+    <main className="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.06),transparent_32%)]">
+      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
         <NotificationsList
           initial={result.data}
           unreadCount={result.unreadCount}
         />
       </div>
-    </div>
+    </main>
   );
 }

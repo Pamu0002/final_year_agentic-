@@ -31,15 +31,15 @@ trap cleanup EXIT INT TERM
 # ── 1. Python AI service ───────────────────────────────────────────────────────
 log "Starting Python AI service…"
 
-if [ ! -d "$AI_DIR/venv" ]; then
-  warn "No venv found at ai-service/venv — creating one…"
-  python3 -m venv "$AI_DIR/venv"
-  "$AI_DIR/venv/bin/pip" install -q -r "$AI_DIR/requirements.txt"
+if [ ! -d "$AI_DIR/.venv" ]; then
+  warn "No venv found at ai-service/.venv — creating one…"
+  python3 -m venv "$AI_DIR/.venv"
+  "$AI_DIR/.venv/bin/pip" install -q -r "$AI_DIR/requirements.txt"
 fi
 
 (
   cd "$AI_DIR"
-  source venv/bin/activate
+  source .venv/bin/activate
   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ) > "$ROOT/logs/ai.log" 2>&1 &
 AI_PID=$!
@@ -69,7 +69,7 @@ BACKEND_PID=$!
 
 log "Waiting for backend on :3000…"
 for i in $(seq 1 30); do
-  if curl -sf http://localhost:3000/api/health > /dev/null 2>&1 || \
+  if curl -sf http://localhost:3000/health > /dev/null 2>&1 || \
      curl -sf http://localhost:3000/api/docs  > /dev/null 2>&1; then
     ok "Backend is up (PID $BACKEND_PID)"
     break
@@ -86,14 +86,13 @@ log "Starting Next.js frontend…"
 
 (
   cd "$FRONTEND_DIR"
-  npm run dev
+  npm run dev -- -p 3001
 ) > "$ROOT/logs/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 
 log "Waiting for frontend on :3001…"
 for i in $(seq 1 30); do
-  if curl -sf http://localhost:3001 > /dev/null 2>&1 || \
-     curl -sf http://localhost:3000 > /dev/null 2>&1; then
+  if curl -sf http://localhost:3001 > /dev/null 2>&1; then
     ok "Frontend is up (PID $FRONTEND_PID)"
     break
   fi

@@ -1,8 +1,8 @@
 import { stripe } from "../../config/stripe.js";
 import { prisma } from "../../../lib/db.js";
-import { sendEmail } from "../../config/nodemailer.js";
-import { createNotification } from "../../../lib/notifications.js";
 import type Stripe from "stripe";
+import { RESERVATION_DEPOSIT_LKR, RESERVATION_HOLD_MINUTES } from "../../config/payments.js";
+import { markPaidReservationAwaitingConfirmation } from "../reservation/reservation.service.js";
 
 const SERVICE_CHARGE_RATE = 0.10;
 
@@ -18,6 +18,7 @@ export interface OrderItemInput {
 
 interface VerifiedOrder {
   verifiedItems: OrderItemInput[];
+  deposit: number;
   subtotal: number;
   serviceCharge: number;
   total: number;
@@ -26,6 +27,7 @@ interface VerifiedOrder {
 const computeVerifiedTotal = (
   orderItems: OrderItemInput[],
   dbPriceMap: Map<string, number>,
+  deposit = RESERVATION_DEPOSIT_LKR,
 ): VerifiedOrder => {
   const verifiedItems = orderItems.map((item) => {
     if (!item.menuItemId) return item;
@@ -41,24 +43,44 @@ const computeVerifiedTotal = (
 
   const subtotal = verifiedItems.reduce((s, i) => s + i.price * i.quantity, 0);
   const serviceCharge = Math.round(subtotal * SERVICE_CHARGE_RATE);
-  return { verifiedItems, subtotal, serviceCharge, total: subtotal + serviceCharge };
+  return { verifiedItems, deposit, subtotal, serviceCharge, total: deposit + subtotal + serviceCharge };
 };
 
 // Resolves authoritative prices from the DB for any item that references a
 // menuItemId. Client-supplied prices are never trusted for identified menu items.
 const verifyOrderAndComputeTotal = async (
   orderItems: OrderItemInput[],
+  restaurantId: string,
 ): Promise<VerifiedOrder> => {
   const menuItemIds = orderItems
     .filter((i) => i.menuItemId)
     .map((i) => i.menuItemId as string);
 
   const dbItems = menuItemIds.length
-    ? await prisma.menuItem.findMany({ where: { id: { in: menuItemIds }, isAvailable: true } })
+    ? await prisma.menuItem.findMany({
+        where: { id: { in: menuItemIds }, restaurantId, isAvailable: true },
+      })
     : [];
   const dbPriceMap = new Map(dbItems.map((m) => [m.id, m.price]));
 
   return computeVerifiedTotal(orderItems, dbPriceMap);
+};
+
+const getPayableReservation = async (reservationId: string, userId: string) => {
+  const reservation = await prisma.reservation.findFirst({
+    where: { id: reservationId, userId },
+    include: { payment: true },
+  });
+  if (!reservation) {
+    throw Object.assign(new Error("Reservation not found"), { status: 404 });
+  }
+  if (reservation.status === "CANCELLED" || reservation.status === "COMPLETED") {
+    throw Object.assign(new Error("This reservation can no longer be paid"), { status: 409 });
+  }
+  if (reservation.payment?.status === "SUCCEEDED") {
+    throw Object.assign(new Error("This reservation has already been paid"), { status: 409 });
+  }
+  return reservation;
 };
 
 export const createPaymentIntent = async (
@@ -67,7 +89,8 @@ export const createPaymentIntent = async (
   userEmail: string,
   orderItems: OrderItemInput[],
 ): Promise<{ clientSecret: string; paymentId: string; amount: number }> => {
-  const { verifiedItems, total } = await verifyOrderAndComputeTotal(orderItems);
+  const reservation = await getPayableReservation(reservationId, userId);
+  const { verifiedItems, total } = await verifyOrderAndComputeTotal(orderItems, reservation.restaurantId);
 
   const intent = await stripe.paymentIntents.create({
     amount: Math.round(total * 100),
@@ -104,9 +127,19 @@ export const createCheckoutSession = async (
   userEmail: string,
   orderItems: OrderItemInput[],
 ): Promise<{ paymentUrl: string; paymentId: string; amount: number }> => {
-  const { verifiedItems, serviceCharge, total } = await verifyOrderAndComputeTotal(orderItems);
+  const reservation = await getPayableReservation(reservationId, userId);
+  const { verifiedItems, deposit, serviceCharge, total } =
+    await verifyOrderAndComputeTotal(orderItems, reservation.restaurantId);
 
-  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+  const lineItems = [
+    {
+      price_data: {
+        currency: "lkr" as const,
+        product_data: { name: "Restaurant Reservation Deposit" },
+        unit_amount: Math.round(deposit * 100),
+      },
+      quantity: 1,
+    },
     ...verifiedItems.map((item) => ({
       price_data: {
         currency: "lkr" as const,
@@ -115,29 +148,33 @@ export const createCheckoutSession = async (
       },
       quantity: item.quantity,
     })),
-    {
+    ...(serviceCharge > 0 ? [{
       price_data: {
         currency: "lkr" as const,
         product_data: { name: "Service Charge (10%)" },
         unit_amount: Math.round(serviceCharge * 100),
       },
       quantity: 1,
-    },
+    }] : []),
   ];
 
+  const checkoutExpiresAt = Math.floor(Date.now() / 1000) + RESERVATION_HOLD_MINUTES * 60;
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     payment_method_types: ["card"],
     line_items: lineItems,
     success_url: `${FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${FRONTEND_URL}/payment/cancel`,
+    cancel_url: `${FRONTEND_URL}/payment/cancel?reservation_id=${reservationId}`,
     customer_email: userEmail,
-    metadata: { reservationId, userId },
-    expires_at: Math.floor(Date.now() / 1000) + 86400, // 24 hours
+    metadata: { reservationId, userId, reservationDeposit: String(deposit) },
+    // Stripe requires Checkout expiry to be at least 30 minutes and strictly
+    // less than 24 hours. A short hold also avoids blocking restaurant capacity.
+    expires_at: checkoutExpiresAt,
   });
 
-  const payment = await prisma.payment.create({
-    data: {
+  const payment = await prisma.payment.upsert({
+    where: { reservationId },
+    create: {
       reservationId,
       userId,
       amount: total,
@@ -147,9 +184,69 @@ export const createCheckoutSession = async (
       checkoutUrl: session.url,
       orderItems: verifiedItems as object[],
     },
+    update: {
+      amount: total,
+      stripePaymentId: session.id,
+      status: "PENDING",
+      checkoutUrl: session.url,
+      orderItems: verifiedItems as object[],
+    },
+  });
+
+  await prisma.reservation.update({
+    where: { id: reservationId },
+    data: { holdExpiresAt: new Date(checkoutExpiresAt * 1000) },
   });
 
   return { paymentUrl: session.url!, paymentId: payment.id, amount: total };
+};
+
+/**
+ * Authenticated fallback for local development and delayed webhooks.
+ * Stripe remains authoritative; a client cannot mark its own payment as paid.
+ */
+export const confirmCheckoutSession = async (
+  sessionId: string,
+  userId: string,
+): Promise<{ paymentStatus: string; reservationStatus: string }> => {
+  const session = await stripe.checkout.sessions.retrieve(sessionId, {
+    expand: ["payment_intent.latest_charge"],
+  });
+
+  if (session.metadata?.userId !== userId) {
+    throw Object.assign(new Error("Checkout session not found"), { status: 404 });
+  }
+
+  const payment = await prisma.payment.findFirst({
+    where: { stripePaymentId: sessionId, userId },
+  });
+  if (!payment) {
+    throw Object.assign(new Error("Payment record not found"), { status: 404 });
+  }
+
+  if (session.payment_status === "paid") {
+    const intent = typeof session.payment_intent === "object" ? session.payment_intent : null;
+    const charge = intent && typeof intent.latest_charge === "object" ? intent.latest_charge : null;
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: "SUCCEEDED",
+        ...(charge?.receipt_url ? { receiptUrl: charge.receipt_url } : {}),
+      },
+    });
+    await markPaidReservationAwaitingConfirmation(payment.reservationId);
+  } else if (session.status === "expired") {
+    await prisma.payment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
+  }
+
+  const updated = await prisma.payment.findUniqueOrThrow({
+    where: { id: payment.id },
+    include: { reservation: { select: { status: true } } },
+  });
+  return {
+    paymentStatus: updated.status,
+    reservationStatus: updated.reservation.status,
+  };
 };
 
 export const handleStripeWebhook = async (
@@ -176,30 +273,7 @@ export const handleStripeWebhook = async (
     }).catch(() => null);
 
     if (payment) {
-      createNotification(
-        payment.userId,
-        "PAYMENT_CONFIRMED",
-        "Payment Confirmed",
-        `Payment of LKR ${payment.amount.toLocaleString()} for your reservation at ${payment.reservation.restaurant.name} was successful.`,
-        { paymentId: payment.id, reservationId: payment.reservationId },
-      ).catch(() => {});
-
-      const items = payment.orderItems as OrderItemInput[] | null;
-      const itemRows = items?.map(
-        (i) => `<tr><td>${i.name}</td><td>× ${i.quantity}</td><td>LKR ${(i.price * i.quantity).toLocaleString()}</td></tr>`
-      ).join("") ?? "";
-
-      sendEmail(
-        payment.user.email,
-        "Payment Confirmed — Your Order is Ready!",
-        `<h2>Payment Successful!</h2>
-         <p><strong>Restaurant:</strong> ${payment.reservation.restaurant.name}</p>
-         <p><strong>Date:</strong> ${payment.reservation.date.toISOString().split("T")[0]}</p>
-         <p><strong>Time:</strong> ${payment.reservation.time}</p>
-         ${itemRows ? `<h3>Your Order</h3><table border="1" cellpadding="6" style="border-collapse:collapse">${itemRows}</table>` : ""}
-         <p><strong>Total Paid:</strong> LKR ${payment.amount.toLocaleString()}</p>
-         <p><em>Transaction: ${session.payment_intent as string}</em></p>`,
-      ).catch((err) => console.error("Receipt email failed:", err));
+      await markPaidReservationAwaitingConfirmation(payment.reservationId);
     }
   }
 
@@ -214,7 +288,7 @@ export const handleStripeWebhook = async (
     if (existing?.status === "SUCCEEDED") return;
 
     if (!existing) {
-      const payment = await prisma.payment.create({
+      await prisma.payment.create({
         data: {
           reservationId,
           userId,
@@ -223,21 +297,41 @@ export const handleStripeWebhook = async (
           stripePaymentId: intent.id,
           status: "SUCCEEDED",
         },
-        include: { user: true, reservation: { include: { restaurant: true } } },
       });
-
-      sendEmail(
-        payment.user.email,
-        "Payment Receipt",
-        `<h2>Payment Successful</h2>
-         <p><strong>Restaurant:</strong> ${payment.reservation.restaurant.name}</p>
-         <p><strong>Amount:</strong> LKR ${payment.amount.toFixed(2)}</p>
-         <p><strong>Transaction ID:</strong> ${intent.id}</p>`,
-      ).catch((err) => console.error("Receipt email failed:", err));
     } else {
       await prisma.payment.update({
         where: { reservationId },
-        data: { status: "SUCCEEDED", stripePaymentId: intent.id },
+        // Keep the Checkout Session reference so confirm-session and the
+        // checkout.session.completed webhook can find the same payment.
+        data: {
+          status: "SUCCEEDED",
+          ...(existing.stripePaymentId?.startsWith("cs_") ? {} : { stripePaymentId: intent.id }),
+        },
+      });
+    }
+
+    await markPaidReservationAwaitingConfirmation(reservationId);
+  }
+
+  // Release the slot when an unpaid Checkout session expires.
+  if (event.type === "checkout.session.expired") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const reservationId = session.metadata?.reservationId;
+    await prisma.payment.updateMany({
+      where: { stripePaymentId: session.id, status: "PENDING" },
+      data: { status: "FAILED" },
+    });
+    if (reservationId) {
+      await prisma.reservation.updateMany({
+        where: { id: reservationId, status: "PENDING" },
+        data: {
+          status: "CANCELLED",
+          holdExpiresAt: null,
+          confirmationExpiresAt: null,
+          cancelledAt: new Date(),
+          cancelledBy: "SYSTEM",
+          cancellationReason: "PAYMENT_HOLD_EXPIRED",
+        },
       });
     }
   }

@@ -30,6 +30,10 @@ router.delete("/menu/:id", portalController.deleteMenuItem);
 
 router.get("/availability/:date", portalController.getAvailabilityForDate);
 router.put("/availability/:date", portalController.setAvailabilityForDate);
+router.get("/tables", portalController.getMyTables);
+router.post("/tables", portalController.createTable);
+router.patch("/tables/:id", portalController.updateTable);
+router.delete("/tables/:id", portalController.deleteTable);
 
 router.get("/promotions", portalController.getMyPromotions);
 router.post("/promotions", portalController.createPromotion);

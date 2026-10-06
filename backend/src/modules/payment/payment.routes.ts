@@ -1,10 +1,10 @@
 import { Router } from "express";
-import express from "express";
 import { authenticate } from "../../middleware/auth.js";
 import { validate } from "../../middleware/validate.js";
 import {
   CreatePaymentIntentBodySchema,
   CreateCheckoutSessionBodySchema,
+  ConfirmCheckoutSessionBodySchema,
 } from "./payment.schema.js";
 import * as paymentController from "./payment.controller.js";
 
@@ -24,11 +24,11 @@ router.post(
   paymentController.createCheckoutSession,
 );
 
-// express.raw() replaces express.json() for this route only
 router.post(
-  "/webhook",
-  express.raw({ type: "application/json" }),
-  paymentController.handleWebhook,
+  "/confirm-session",
+  authenticate,
+  validate(ConfirmCheckoutSessionBodySchema),
+  paymentController.confirmCheckoutSession,
 );
 
 router.get("/history", authenticate, paymentController.getPaymentHistory);

@@ -103,6 +103,31 @@ export const setAvailabilityForDate = async (req: AuthRequest, res: Response): P
   res.json(result);
 };
 
+export const getMyTables = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await portalService.getMyTables(req.user!.dbId));
+};
+
+export const createTable = async (req: AuthRequest, res: Response): Promise<void> => {
+  const table = await portalService.createTable(
+    req.user!.dbId,
+    req.body as Parameters<typeof portalService.createTable>[1],
+  );
+  res.status(201).json(table);
+};
+
+export const updateTable = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await portalService.updateTable(
+    req.user!.dbId,
+    String(req.params.id),
+    req.body as Parameters<typeof portalService.updateTable>[2],
+  ));
+};
+
+export const deleteTable = async (req: AuthRequest, res: Response): Promise<void> => {
+  await portalService.deleteTable(req.user!.dbId, String(req.params.id));
+  res.status(204).end();
+};
+
 export const getMyPromotions = async (req: AuthRequest, res: Response): Promise<void> => {
   res.json(await portalService.getMyPromotions(req.user!.dbId));
 };
@@ -152,9 +177,9 @@ export const getMyHolidays = async (req: AuthRequest, res: Response): Promise<vo
 };
 
 export const addHoliday = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { date, reason } = req.body as { date: string; reason?: string };
-  if (!date) { res.status(400).json({ error: "date is required" }); return; }
-  const holiday = await portalService.addHoliday(req.user!.dbId, date, reason);
+  const input = req.body as portalService.ClosureInput;
+  if (!input.date) { res.status(400).json({ error: "date is required" }); return; }
+  const holiday = await portalService.addHoliday(req.user!.dbId, input);
   res.status(201).json(holiday);
 };
 

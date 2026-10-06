@@ -61,6 +61,7 @@ const RestaurantResponseSchema = z
     totalReviews: z.number(),
     isActive: z.boolean(),
     isVerified: z.boolean(),
+    reservationDeposit: z.number().positive(),
   })
   .openapi("RestaurantResponse");
 

@@ -1,14 +1,14 @@
+// UI-only redesign: Restyled closing dates page header and container layout
 import { HolidayManager } from "@/components/restaurant-portal/HolidayManager";
+import { PortalPageHeader } from "@/components/restaurant-portal/PortalPageHeader";
 
 export default function PortalHolidaysPage() {
   return (
-    <div className="p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Holidays</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Mark dates when your restaurant will be closed. Reservations won&apos;t be accepted on these days.
-        </p>
-      </div>
+    <div className="space-y-6 px-5 py-7 sm:px-7 lg:px-10 lg:py-9">
+      <PortalPageHeader
+        title="Closing Dates & Holidays"
+        description="Mark holidays, annual closures, and blackout dates so guests always see accurate booking availability."
+      />
       <HolidayManager />
     </div>
   );

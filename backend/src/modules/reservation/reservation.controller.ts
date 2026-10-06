@@ -41,11 +41,11 @@ export const cancelReservation = async (
   req: AuthRequest,
   res: Response,
 ): Promise<void> => {
-  const reservation = await reservationService.cancelReservation(
+  const result = await reservationService.cancelReservation(
     String(req.params.id),
     req.user!.dbId,
   );
-  res.json(reservation);
+  res.json(result);
 };
 
 export const updateReservation = async (

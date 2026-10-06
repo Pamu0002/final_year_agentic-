@@ -1,5 +1,7 @@
+// UI-only redesign: Restyled promotions page header and container layout
 import { serverFetch } from "@/lib/server/api";
 import { PromotionsClient } from "@/components/restaurant-portal/PromotionsClient";
+import { PortalPageHeader } from "@/components/restaurant-portal/PortalPageHeader";
 
 interface Promotion {
   id: string;
@@ -11,22 +13,30 @@ interface Promotion {
   endDate: string;
   isActive: boolean;
   imageUrl: string | null;
+  menuItems: MenuItem[];
+}
+
+interface MenuItem {
+  id: string;
+  name: string;
+  price: number;
+  category: string;
+  isAvailable: boolean;
 }
 
 export default async function PortalPromotionsPage() {
-  const promotions = await serverFetch<Promotion[]>(
-    "restaurant-portal/promotions"
-  ).catch(() => []);
+  const [promotions, menuItems] = await Promise.all([
+    serverFetch<Promotion[]>("restaurant-portal/promotions").catch(() => []),
+    serverFetch<MenuItem[]>("restaurant-portal/menu").catch(() => []),
+  ]);
 
   return (
-    <div className="p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Promotions</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage discounts, events and special offers
-        </p>
-      </div>
-      <PromotionsClient initial={promotions} />
+    <div className="space-y-6 px-5 py-7 sm:px-7 lg:px-10 lg:py-9">
+      <PortalPageHeader
+        title="Promotions & Vouchers"
+        description="Create discounts, seasonal offers, and special events that bring guests back."
+      />
+      <PromotionsClient initial={promotions} menuItems={menuItems} />
     </div>
   );
 }

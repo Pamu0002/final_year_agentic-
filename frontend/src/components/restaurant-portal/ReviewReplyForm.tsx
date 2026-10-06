@@ -1,8 +1,10 @@
+// UI-only redesign: Restyled review reply form with soft rounded inputs and action buttons
 "use client";
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { MessageSquare, Send } from "lucide-react";
 
 export function ReviewReplyForm({ reviewId, existingReply }: { reviewId: string; existingReply?: string | null }) {
   const [open, setOpen] = useState(false);
@@ -25,26 +27,47 @@ export function ReviewReplyForm({ reviewId, existingReply }: { reviewId: string;
 
   if (!open) {
     return (
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        {saved ? "Edit Reply" : "Reply"}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen(true)}
+        className="h-8 rounded-xl border-border/80 text-xs font-bold text-foreground hover:bg-primary/10 hover:text-primary dark:hover:text-[#D4B57D] hover:border-primary/30 transition-all shadow-2xs"
+      >
+        <MessageSquare className="size-3.5 mr-1.5 text-primary" />
+        {saved ? "Edit Response" : "Reply to Guest"}
       </Button>
     );
   }
 
   return (
-    <form onSubmit={submit} className="space-y-2 mt-2">
+    <form onSubmit={submit} className="space-y-3 mt-3 rounded-2xl border border-border/80 bg-muted/20 p-4">
       <Textarea
         value={reply}
         onChange={(e) => setReply(e.target.value)}
-        placeholder="Write your reply to this review…"
+        placeholder="Write a polite, welcoming reply to this guest review…"
         rows={3}
         autoFocus
+        className="rounded-xl border-border/80 bg-background text-xs focus:ring-2 focus:ring-primary/30 font-sans"
       />
-      <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={saving || !reply.trim()}>
-          {saving ? "Saving…" : "Post Reply"}
+      <div className="flex gap-2 justify-end">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setOpen(false)}
+          className="h-8 rounded-xl text-xs font-bold text-muted-foreground hover:text-foreground"
+        >
+          Cancel
         </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={saving || !reply.trim()}
+          className="h-8 rounded-xl bg-primary hover:bg-primary text-white font-bold text-xs px-4 shadow-sm"
+        >
+          <Send className="size-3 mr-1.5" />
+          {saving ? "Posting…" : "Post Reply"}
+        </Button>
       </div>
     </form>
   );

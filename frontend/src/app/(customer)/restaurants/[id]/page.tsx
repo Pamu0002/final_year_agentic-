@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   MapPin, Phone, Mail, Globe, Star, ArrowLeft,
-  Map, Tag, Users, Clock, CheckCircle2, ChevronRight, CalendarDays,
+  Map, Tag, Users, Clock, CheckCircle2, ChevronRight,
+  UtensilsCrossed, Sparkles, ShieldCheck,
 } from "lucide-react";
 import { FavoriteButton } from "@/components/customer/FavoriteButton";
 import { WaitlistJoinForm } from "@/components/customer/WaitlistJoinForm";
@@ -24,6 +25,7 @@ interface Restaurant {
   cuisineTypes: string[]; imageUrls: string[]; profileImageUrl: string | null; coverImageUrl: string | null;
   priceRange: string; isActive: boolean; isVerified: boolean;
   avgRating: number | null; totalReviews: number; totalSeats: number | null;
+  reservationDeposit: number;
   latitude: number | null; longitude: number | null; openingHours: OpeningHours | null;
 }
 
@@ -40,7 +42,9 @@ interface Review {
 
 interface Promotion {
   id: string; title: string; description: string | null;
-  discountType: string; discountValue: number; startDate: string; endDate: string;
+  type: "DISCOUNT" | "HAPPY_HOUR" | "SPECIAL_EVENT" | "SEASONAL" | "COUPON";
+  discountValue: number | null; startDate: string; endDate: string;
+  menuItems: MenuItem[];
 }
 
 // ── constants ─────────────────────────────────────────────────────────────────
@@ -56,6 +60,17 @@ const DAY_LABEL: Record<string, string> = {
   monday:"Monday", tuesday:"Tuesday", wednesday:"Wednesday", thursday:"Thursday",
   friday:"Friday", saturday:"Saturday", sunday:"Sunday",
 };
+
+function getTodayInColombo(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Colombo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -104,7 +119,10 @@ function OpeningHoursSection({ hours }: { hours: OpeningHours }) {
   );
 }
 
-function MenuItemCard({ item }: { item: MenuItem }) {
+function MenuItemCard({ item, discountPercent }: { item: MenuItem; discountPercent?: number }) {
+  const discountedPrice = discountPercent
+    ? Math.round(item.price * (1 - discountPercent / 100))
+    : null;
   return (
     <div className={`group relative flex flex-col rounded-xl border bg-card overflow-hidden transition-colors hover:border-primary/30 ${!item.isAvailable ? "opacity-60" : ""}`}>
       {/* Image */}
@@ -127,6 +145,11 @@ function MenuItemCard({ item }: { item: MenuItem }) {
             </span>
           </div>
         )}
+        {discountPercent && item.isAvailable && (
+          <span className="absolute left-2.5 top-2.5 rounded-full bg-terracotta px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-md">
+            {discountPercent}% off
+          </span>
+        )}
       </div>
 
       {/* Content */}
@@ -135,7 +158,16 @@ function MenuItemCard({ item }: { item: MenuItem }) {
         {item.description && (
           <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed flex-1">{item.description}</p>
         )}
-        <p className="text-sm font-bold text-primary mt-1">LKR {item.price.toLocaleString()}</p>
+        <div className="mt-1 flex flex-wrap items-baseline gap-2">
+          {discountedPrice != null ? (
+            <>
+              <span className="text-xs text-muted-foreground line-through">LKR {item.price.toLocaleString()}</span>
+              <span className="text-sm font-bold text-primary">LKR {discountedPrice.toLocaleString()}</span>
+            </>
+          ) : (
+            <span className="text-sm font-bold text-primary">LKR {item.price.toLocaleString()}</span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -143,8 +175,16 @@ function MenuItemCard({ item }: { item: MenuItem }) {
 
 // ── page ──────────────────────────────────────────────────────────────────────
 
-export default async function RestaurantDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function RestaurantDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ book?: string }>;
+}) {
   const { id } = await params;
+  const { book } = await searchParams;
+  const today = getTodayInColombo();
 
   let restaurant: Restaurant;
   try {
@@ -164,6 +204,13 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
     acc[item.category].push(item);
     return acc;
   }, {});
+  const menuDiscounts = promotions.reduce<Record<string, number>>((discounts, promotion) => {
+    if (!promotion.discountValue) return discounts;
+    for (const item of promotion.menuItems) {
+      discounts[item.id] = Math.max(discounts[item.id] ?? 0, promotion.discountValue);
+    }
+    return discounts;
+  }, {});
 
   const coverImage = restaurant.coverImageUrl ?? restaurant.imageUrls?.[0] ?? null;
   const profileImage = restaurant.profileImageUrl ?? null;
@@ -172,22 +219,32 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
     : `https://www.google.com/maps/search/${encodeURIComponent(restaurant.name + " " + restaurant.address)}`;
 
   return (
-    <div className="h-full overflow-y-auto bg-background">
+    <div className="min-h-full bg-background">
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
-      <div className="relative h-64 w-full bg-muted">
+      <div className={`relative w-full overflow-hidden ${coverImage ? "h-64 sm:h-[22rem]" : "h-48 sm:h-60"}`}>
         {coverImage ? (
           <Image src={coverImage} alt={restaurant.name} fill className="object-cover" unoptimized />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-8xl opacity-10 select-none">🍽️</div>
+          <div className="absolute inset-0 overflow-hidden bg-[radial-gradient(circle_at_78%_15%,rgba(212,181,125,0.32),transparent_28%),linear-gradient(120deg,#351019_0%,#711b2d_58%,#241719_100%)]">
+            <div className="absolute -right-10 -top-28 size-72 rounded-full border border-white/10" />
+            <div className="absolute right-14 top-6 size-32 rounded-full border border-white/10" />
+            <div className="absolute left-[12%] top-1/2 flex -translate-y-1/2 items-center gap-4 text-white/90">
+              <span className="grid size-14 place-items-center rounded-2xl border border-white/15 bg-white/10 backdrop-blur"><UtensilsCrossed className="size-6" /></span>
+              <div>
+                <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-[#E7C98F]">Dining in {restaurant.area}</p>
+                <p className="mt-1 font-heading text-xl sm:text-2xl">A memorable table awaits</p>
+              </div>
+            </div>
+          </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
+        <div className={`absolute inset-0 ${coverImage ? "bg-gradient-to-t from-[#211518]/80 via-transparent to-black/20" : "bg-gradient-to-r from-black/15 to-transparent"}`} />
 
         {/* Back button */}
-        <div className="absolute top-4 left-4">
+        <div className="absolute left-5 top-5 sm:left-8">
           <Link
             href="/home"
-            className="inline-flex items-center gap-1.5 rounded-full bg-background/80 backdrop-blur border border-border/50 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-background transition-colors shadow-sm"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-black/25 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-md transition-colors hover:bg-black/40"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back
@@ -196,7 +253,7 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
 
         {/* Profile logo */}
         {profileImage && (
-          <div className="absolute bottom-0 left-6 translate-y-1/2 z-10">
+          <div className="absolute bottom-6 right-6 z-10 sm:right-10">
             <div className="relative h-20 w-20 rounded-2xl overflow-hidden border-4 border-background bg-muted shadow-xl">
               <Image src={profileImage} alt={`${restaurant.name} logo`} fill className="object-cover" unoptimized />
             </div>
@@ -205,13 +262,16 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
       </div>
 
       {/* ── Main content ─────────────────────────────────────────────────── */}
-      <div className="max-w-6xl mx-auto px-4 pb-20">
+      <div className="mx-auto max-w-7xl px-5 pb-28 lg:pb-20">
 
         {/* Title strip */}
-        <div className={`flex items-end justify-between gap-4 pb-5 border-b border-border/50 ${profileImage ? "pt-14" : "pt-5"}`}>
+        <div className="relative z-10 -mt-7 flex items-start justify-between gap-4 rounded-[1.75rem] border border-border/80 bg-background/95 p-5 shadow-xl shadow-black/5 backdrop-blur-xl sm:-mt-10 sm:p-7">
           <div className="space-y-1 min-w-0">
+            <div className="mb-2 flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-primary">
+              <Sparkles className="size-3.5" /> Curated restaurant
+            </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold text-foreground leading-tight">{restaurant.name}</h1>
+              <h1 className="font-heading text-3xl leading-tight text-foreground sm:text-5xl">{restaurant.name}</h1>
               {restaurant.isVerified && (
                 <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
               )}
@@ -220,12 +280,12 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
               )}
             </div>
 
-            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <div className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
               <MapPin className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{restaurant.area} · {restaurant.address}</span>
             </div>
 
-            <div className="flex items-center gap-3 flex-wrap pt-0.5">
+            <div className="flex flex-wrap items-center gap-2 pt-2">
               {restaurant.avgRating != null && (
                 <div className="flex items-center gap-1.5">
                   <Stars rating={Math.round(restaurant.avgRating)} />
@@ -233,30 +293,31 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
                   <span className="text-xs text-muted-foreground">({restaurant.totalReviews})</span>
                 </div>
               )}
-              <span className="text-xs text-muted-foreground">·</span>
-              <span className="text-sm text-muted-foreground" title={PRICE_FULL[restaurant.priceRange]}>
-                {PRICE_LABEL[restaurant.priceRange] ?? restaurant.priceRange}
+              <span className="rounded-full border border-border bg-card px-2.5 py-1 text-xs font-semibold text-muted-foreground" title={PRICE_FULL[restaurant.priceRange]}>
+                {PRICE_FULL[restaurant.priceRange] ?? restaurant.priceRange} · {PRICE_LABEL[restaurant.priceRange]}
               </span>
               {restaurant.cuisineTypes.slice(0, 3).map((c) => (
-                <Badge key={c} variant="secondary" className="text-xs font-normal">{c}</Badge>
+                <Badge key={c} variant="secondary" className="rounded-full px-2.5 py-1 text-xs font-semibold">{c}</Badge>
               ))}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 items-center gap-2 rounded-full border border-border bg-card p-1 shadow-sm">
             <FavoriteButton restaurantId={restaurant.id} />
           </div>
         </div>
 
         {/* ── Two-column layout ────────────────────────────────────────────── */}
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
 
           {/* ── Left: main content ─────────────────────────────────────────── */}
           <div className="lg:col-span-2 space-y-8">
 
             {/* Description */}
             {restaurant.description && (
-              <p className="text-sm text-muted-foreground leading-relaxed">{restaurant.description}</p>
+              <div className="rounded-2xl border border-border/70 bg-card/60 p-5">
+                <p className="text-base leading-7 text-muted-foreground">{restaurant.description}</p>
+              </div>
             )}
 
             {/* Promotions */}
@@ -265,17 +326,40 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
                 <SectionHeading icon={<Tag className="h-4 w-4" />} title="Active Offers" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                   {promotions.map((p) => (
-                    <div key={p.id} className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-1.5">
-                      <p className="text-sm font-semibold text-foreground">{p.title}</p>
+                    <div key={p.id} className="space-y-3 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                      <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-terracotta">{p.type.replaceAll("_", " ")}</p>
+                      <p className="mt-1 text-sm font-semibold text-foreground">{p.title}</p>
                       {p.description && <p className="text-xs text-muted-foreground">{p.description}</p>}
+                      </div>
                       <div className="flex items-center justify-between gap-2 pt-0.5">
                         <span className="text-xs font-bold text-primary">
-                          {p.discountType === "PERCENTAGE" ? `${p.discountValue}% off` : `LKR ${p.discountValue} off`}
+                          {p.discountValue != null ? `${p.discountValue}% off` : "Special event"}
                         </span>
                         <span className="text-[10px] text-muted-foreground">
                           Until {new Date(p.endDate).toLocaleDateString("en-GB")}
                         </span>
                       </div>
+                      {p.menuItems.length > 0 && (
+                        <div className="space-y-1.5 border-t border-primary/15 pt-3">
+                          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Offer menu</p>
+                          {p.menuItems.slice(0, 4).map((item) => {
+                            const offerPrice = p.discountValue != null
+                              ? Math.round(item.price * (1 - p.discountValue / 100))
+                              : item.price;
+                            return (
+                              <div key={item.id} className="flex items-center justify-between gap-3 text-xs">
+                                <span className="truncate font-medium text-foreground">{item.name}</span>
+                                <span className="shrink-0">
+                                  <span className="text-muted-foreground line-through">{item.price.toLocaleString()}</span>{" "}
+                                  <span className="font-bold text-primary">LKR {offerPrice.toLocaleString()}</span>
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {p.menuItems.length > 4 && <p className="text-[10px] text-muted-foreground">+{p.menuItems.length - 4} more discounted items</p>}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -310,7 +394,7 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {items.map((item) => (
-                          <MenuItemCard key={item.id} item={item} />
+                          <MenuItemCard key={item.id} item={item} discountPercent={menuDiscounts[item.id]} />
                         ))}
                       </div>
                     </div>
@@ -358,22 +442,32 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
           </div>
 
           {/* ── Right: sidebar ─────────────────────────────────────────────── */}
-          <div className="space-y-4">
+          <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
 
             {/* CTA card */}
-            <div className="rounded-xl border bg-card p-4 space-y-2.5">
+            <div className="overflow-hidden rounded-[1.5rem] border border-primary/20 bg-card shadow-xl shadow-primary/5">
+              <div className="bg-gradient-to-br from-primary/[0.12] via-card to-secondary/50 p-5">
+                <div className="mb-3 flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-primary">
+                  <Sparkles className="size-3.5" /> Plan your visit
+                </div>
+                <h2 className="font-heading text-3xl">A seat at the table</h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">Choose a time, bring your people, and optionally pre-order your meal.</p>
+              </div>
+              <div className="space-y-3 p-5">
+              <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background px-4 py-3 text-sm">
+                <span className="text-muted-foreground">Reservation deposit</span>
+                <strong>LKR {restaurant.reservationDeposit.toLocaleString()}</strong>
+              </div>
               {/* Direct booking */}
               <BookTableDialog
                 restaurantId={restaurant.id}
                 restaurantName={restaurant.name}
                 totalSeats={restaurant.totalSeats}
                 isActive={restaurant.isActive}
-              >
-                <Button className="w-full gap-2" disabled={!restaurant.isActive}>
-                  <CalendarDays className="h-4 w-4" />
-                  Reserve a Table
-                </Button>
-              </BookTableDialog>
+                defaultOpen={book === "true"}
+                reservationDeposit={restaurant.reservationDeposit}
+                initialDate={today}
+              />
 
               {/* Divider */}
               <div className="flex items-center gap-2">
@@ -387,6 +481,11 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
                 message={`I'd like to book a table at ${restaurant.name}. Can you help me with availability and reservations?`}
                 disabled={!restaurant.isActive}
               />
+
+              <div className="flex gap-2.5 rounded-xl bg-primary/[0.06] p-3">
+                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+                <p className="text-[0.7rem] leading-5 text-muted-foreground">Pay securely, then the restaurant confirms your table. Unconfirmed requests are cancelled and refunded automatically.</p>
+              </div>
 
               {/* Secondary links */}
               <div className="flex gap-2 pt-0.5">
@@ -405,10 +504,11 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
                   </a>
                 </Button>
               </div>
+              </div>
             </div>
 
             {/* Quick info */}
-            <div className="rounded-xl border bg-card p-4 space-y-3">
+            <div className="space-y-3 rounded-[1.25rem] border bg-card p-5">
               <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Details</p>
               <div className="space-y-2.5">
                 {restaurant.phone && (
@@ -446,7 +546,7 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
 
             {/* Opening hours */}
             {restaurant.openingHours && Object.keys(restaurant.openingHours).length > 0 && (
-              <div className="rounded-xl border bg-card p-4 space-y-3">
+              <div className="space-y-3 rounded-[1.25rem] border bg-card p-5">
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-muted-foreground" />
                   <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Hours</p>
@@ -475,6 +575,9 @@ export default async function RestaurantDetailPage({ params }: { params: Promise
           </div>
         </div>
       </div>
+      <div className="fixed bottom-0 inset-x-0 z-20 border-t bg-card/95 backdrop-blur px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
+        <BookTableDialog restaurantId={restaurant.id} restaurantName={restaurant.name} totalSeats={restaurant.totalSeats} isActive={restaurant.isActive} reservationDeposit={restaurant.reservationDeposit} initialDate={today} triggerLabel="Book a table" />
+      </div>
     </div>
   );
 }
@@ -485,7 +588,7 @@ function SectionHeading({ title, count, icon }: { title: string; count?: number;
   return (
     <div className="flex items-center gap-2">
       {icon && <span className="text-primary">{icon}</span>}
-      <h2 className="text-base font-bold text-foreground">{title}</h2>
+      <h2 className="font-heading text-2xl text-foreground">{title}</h2>
       {count !== undefined && (
         <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground font-medium">{count}</span>
       )}

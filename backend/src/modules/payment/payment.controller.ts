@@ -36,6 +36,15 @@ export const createCheckoutSession = async (
   res.status(201).json(result);
 };
 
+export const confirmCheckoutSession = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  const { sessionId } = req.body as { sessionId: string };
+  const result = await paymentService.confirmCheckoutSession(sessionId, req.user!.dbId);
+  res.json(result);
+};
+
 export const handleWebhook = async (
   req: Request,
   res: Response,

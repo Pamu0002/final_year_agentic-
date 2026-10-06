@@ -3,8 +3,20 @@
 import { XCircle } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef } from "react";
 
-export default function PaymentCancelPage() {
+function PaymentCancelContent() {
+  const searchParams = useSearchParams();
+  const releasedRef = useRef(false);
+
+  useEffect(() => {
+    const reservationId = searchParams.get("reservation_id");
+    if (!reservationId || releasedRef.current) return;
+    releasedRef.current = true;
+    fetch(`/api/proxy/reservations/${reservationId}`, { method: "DELETE" }).catch(() => undefined);
+  }, [searchParams]);
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background px-4 text-center">
       <div className="flex h-20 w-20 items-center justify-center rounded-full bg-red-500/10">
@@ -14,7 +26,7 @@ export default function PaymentCancelPage() {
       <div className="space-y-2">
         <h1 className="text-2xl font-bold text-foreground">Payment Cancelled</h1>
         <p className="text-muted-foreground">
-          Your payment was cancelled. Your reservation is still confirmed — you can pay later via the chat.
+          Your reservation was not confirmed and the temporary table hold has been released. You can return and try again.
         </p>
       </div>
 
@@ -27,5 +39,13 @@ export default function PaymentCancelPage() {
         </Button>
       </div>
     </div>
+  );
+}
+
+export default function PaymentCancelPage() {
+  return (
+    <Suspense>
+      <PaymentCancelContent />
+    </Suspense>
   );
 }

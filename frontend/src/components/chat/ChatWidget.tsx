@@ -1,25 +1,91 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { UtensilsCrossed, X, RotateCcw } from "lucide-react";
 import { useChat } from "@/hooks/useChat";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 
-const SUGGESTED = [
+interface UserPreferences {
+  cuisines?: string[];
+  dietaryRestrictions?: string[];
+  budgetPreference?: string;
+}
+
+const DEFAULT_SUGGESTED = [
   "Find me a restaurant for tonight",
   "Recommend a romantic spot",
   "Book a table for 2 at 7pm",
 ];
 
+function getTailoredSuggestions(preferences?: UserPreferences): string[] {
+  if (!preferences) return DEFAULT_SUGGESTED;
+
+  const cuisines = preferences.cuisines || [];
+  const dietary = preferences.dietaryRestrictions || [];
+  const budget = preferences.budgetPreference;
+
+  if (cuisines.length === 0 && dietary.length === 0 && !budget) {
+    return DEFAULT_SUGGESTED;
+  }
+
+  const result: string[] = [];
+
+  // 1. Cuisine recommendation prompt
+  if (cuisines.length > 0) {
+    const cuisineStr = cuisines.slice(0, 2).join(" & ");
+    result.push(`Recommend top ${cuisineStr} places for tonight`);
+  } else {
+    result.push("Find me a restaurant for tonight");
+  }
+
+  // 2. Dietary or Romantic prompt
+  if (dietary.length > 0) {
+    const dietStr = dietary.join(", ");
+    result.push(`Find ${dietStr} friendly dining spots`);
+  } else {
+    result.push("Recommend a romantic dining spot");
+  }
+
+  // 3. Budget / Booking prompt
+  if (budget) {
+    const budgetLabel =
+      budget === "BUDGET"
+        ? "budget-friendly"
+        : budget === "FINE_DINING"
+        ? "fine dining"
+        : budget.toLowerCase();
+    result.push(`Book a ${budgetLabel} table for 2 at 7pm`);
+  } else {
+    result.push("Book a table for 2 at 7pm");
+  }
+
+  return result;
+}
+
 export function ChatWidget() {
+  const pathname = usePathname();
+  const hasBookingBar = pathname.startsWith("/restaurants/");
   const [open, setOpen] = useState(false);
+  const [suggested, setSuggested] = useState<string[]>(DEFAULT_SUGGESTED);
   const { messages, loading, sendMessage, clearMessages } = useChat();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  useEffect(() => {
+    fetch("/api/proxy/auth/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((user) => {
+        if (user?.diningPreferences) {
+          setSuggested(getTailoredSuggestions(user.diningPreferences));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // "Book via AI" buttons elsewhere dispatch this event to open the panel
   useEffect(() => {
@@ -37,7 +103,7 @@ export function ChatWidget() {
       {/* Floating trigger */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-5 right-5 z-50 flex items-center gap-2.5 rounded-full bg-primary text-primary-foreground px-5 py-3.5 shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-105 active:scale-95 transition-all duration-200"
+        className={`fixed ${hasBookingBar ? "bottom-[calc(6rem+env(safe-area-inset-bottom))] lg:bottom-5" : "bottom-5"} right-5 z-50 flex items-center gap-2.5 rounded-full bg-primary text-primary-foreground px-5 py-3.5 shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-105 active:scale-95 transition-all duration-200 ${open ? "hidden" : ""}`}
         aria-label={open ? "Close chat" : "Open chat"}
       >
         <UtensilsCrossed className="h-5 w-5" />
@@ -54,6 +120,8 @@ export function ChatWidget() {
 
       {/* Slide-in side panel */}
       <div
+        inert={!open}
+        aria-hidden={!open}
         className={`fixed right-0 top-0 z-40 h-full w-full max-w-[400px] flex flex-col bg-background border-l shadow-2xl transition-transform duration-300 ease-in-out ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
@@ -81,6 +149,7 @@ export function ChatWidget() {
           )}
           <button
             onClick={() => setOpen(false)}
+            aria-label="Close chat"
             className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <X className="h-4 w-4" />
@@ -101,7 +170,7 @@ export function ChatWidget() {
                 </p>
               </div>
               <div className="flex flex-col gap-2 w-full">
-                {SUGGESTED.map((s) => (
+                {suggested.map((s) => (
                   <button
                     key={s}
                     onClick={() => sendMessage(s)}

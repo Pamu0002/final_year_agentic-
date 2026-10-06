@@ -1,3 +1,4 @@
+// UI-only redesign: Restyled menu item edit modal and action buttons
 "use client";
 
 import { useState } from "react";
@@ -5,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Trash2, Pencil, X } from "lucide-react";
+import { Trash2, Pencil, X, UtensilsCrossed } from "lucide-react";
 import { ImageUploader } from "./ImageUploader";
 
 // ── Toggle availability ───────────────────────────────────────────────────────
@@ -32,7 +33,13 @@ export function ToggleAvailabilityButton({
   };
 
   return (
-    <Button variant="outline" size="sm" onClick={handleToggle} disabled={loading}>
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleToggle}
+      disabled={loading}
+      className="h-8 rounded-xl text-[0.68rem] font-bold uppercase tracking-wider px-3 border-border/80 hover:bg-muted"
+    >
       {isAvailable ? "Mark Unavailable" : "Mark Available"}
     </Button>
   );
@@ -53,8 +60,15 @@ export function DeleteMenuItemButton({ itemId }: { itemId: string }) {
   };
 
   return (
-    <Button variant="ghost" size="sm" onClick={handleDelete} disabled={loading}>
-      <Trash2 className="h-4 w-4 text-destructive" />
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={handleDelete}
+      disabled={loading}
+      className="size-8 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+      title="Delete menu item"
+    >
+      <Trash2 className="size-4" />
     </Button>
   );
 }
@@ -118,42 +132,53 @@ export function EditMenuItemButton({ item }: { item: MenuItemData }) {
 
   return (
     <>
-      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        <Pencil className="h-4 w-4 text-muted-foreground" />
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setOpen(true)}
+        className="size-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        title="Edit item"
+      >
+        <Pencil className="size-4" />
       </Button>
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
         >
-          <div className="w-full max-w-lg rounded-xl border bg-card shadow-xl">
+          <div className="w-full max-w-lg rounded-2xl border border-border/80 bg-card shadow-2xl overflow-hidden">
             {/* Modal header */}
-            <div className="flex items-center justify-between border-b px-6 py-4">
-              <h2 className="text-base font-semibold text-foreground">Edit Menu Item</h2>
-              <button
+            <div className="flex items-center justify-between border-b border-border/70 px-6 py-4 bg-muted/30">
+              <h2 className="font-heading text-lg font-bold text-foreground flex items-center gap-2">
+                <UtensilsCrossed className="size-4 text-primary" />
+                Edit Menu Item
+              </h2>
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => setOpen(false)}
-                className="rounded p-1 hover:bg-muted transition-colors"
+                className="size-7 rounded-lg text-muted-foreground hover:text-foreground"
               >
-                <X className="h-4 w-4 text-muted-foreground" />
-              </button>
+                <X className="size-4" />
+              </Button>
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+            <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4 text-xs font-semibold">
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1 col-span-2">
-                  <Label htmlFor="edit-name">Name *</Label>
-                  <Input id="edit-name" name="name" defaultValue={item.name} required />
+                <div className="space-y-1.5 col-span-2">
+                  <Label htmlFor="edit-name" className="text-foreground">Name *</Label>
+                  <Input id="edit-name" name="name" defaultValue={item.name} required className="rounded-xl border-border/80" />
                 </div>
 
-                <div className="space-y-1 col-span-2">
-                  <Label htmlFor="edit-description">Description</Label>
-                  <Input id="edit-description" name="description" defaultValue={item.description ?? ""} />
+                <div className="space-y-1.5 col-span-2">
+                  <Label htmlFor="edit-description" className="text-foreground">Description</Label>
+                  <Input id="edit-description" name="description" defaultValue={item.description ?? ""} className="rounded-xl border-border/80" />
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="edit-price">Price (LKR) *</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-price" className="text-foreground">Price (LKR) *</Label>
                   <Input
                     id="edit-price"
                     name="price"
@@ -162,26 +187,28 @@ export function EditMenuItemButton({ item }: { item: MenuItemData }) {
                     step="0.01"
                     defaultValue={item.price}
                     required
+                    className="rounded-xl border-border/80"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="edit-category">Category *</Label>
-                  <Input id="edit-category" name="category" defaultValue={item.category} required />
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-category" className="text-foreground">Category *</Label>
+                  <Input id="edit-category" name="category" defaultValue={item.category} required className="rounded-xl border-border/80" />
                 </div>
 
-                <div className="space-y-1 col-span-2">
-                  <Label htmlFor="edit-dietary">Dietary Info (comma-separated)</Label>
+                <div className="space-y-1.5 col-span-2">
+                  <Label htmlFor="edit-dietary" className="text-foreground">Dietary Info (comma-separated)</Label>
                   <Input
                     id="edit-dietary"
                     name="dietaryInfo"
                     defaultValue={dietaryDefault}
                     placeholder="Vegetarian, Halal"
+                    className="rounded-xl border-border/80"
                   />
                 </div>
 
-                <div className="space-y-1 col-span-2">
-                  <Label>Item Photo</Label>
+                <div className="space-y-1.5 col-span-2">
+                  <Label className="text-foreground">Item Photo</Label>
                   <ImageUploader
                     endpoint="menuItemImage"
                     value={imageUrl}
@@ -191,14 +218,14 @@ export function EditMenuItemButton({ item }: { item: MenuItemData }) {
                 </div>
               </div>
 
-              {error && <p className="text-sm text-destructive">{error}</p>}
+              {error && <p className="text-xs font-bold text-destructive">{error}</p>}
 
-              <div className="flex gap-2 pt-1">
-                <Button type="submit" disabled={loading}>
-                  {loading ? "Saving…" : "Save Changes"}
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              <div className="flex gap-2.5 justify-end pt-2">
+                <Button type="button" variant="ghost" onClick={() => setOpen(false)} className="rounded-xl text-xs font-bold text-muted-foreground">
                   Cancel
+                </Button>
+                <Button type="submit" disabled={loading} className="rounded-xl bg-primary hover:bg-primary text-white font-bold text-xs px-5 shadow-sm">
+                  {loading ? "Saving…" : "Save Changes"}
                 </Button>
               </div>
             </form>

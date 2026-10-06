@@ -3,9 +3,40 @@ import { sendEmail } from "../../config/nodemailer.js";
 import type { User } from "../../../generated/prisma/client.js";
 import type { z } from "zod";
 import type { RegisterBodySchema, UpdateProfileBodySchema } from "./auth.schema.js";
+import neo4j from "neo4j-driver";
 
 export type RegisterInput = z.infer<typeof RegisterBodySchema>;
 export type UpdateProfileInput = z.infer<typeof UpdateProfileBodySchema>;
+
+// ── Neo4j preference seeding ──────────────────────────────────────────────────
+
+const _neo4jDriver = neo4j.driver(
+  process.env.NEO4J_URI ?? "bolt://localhost:7687",
+  neo4j.auth.basic(
+    process.env.NEO4J_USER ?? "neo4j",
+    process.env.NEO4J_PASSWORD ?? "neo4j_pass",
+  ),
+);
+
+async function seedUserPreferences(userId: string, cuisines: string[]): Promise<void> {
+  const session = _neo4jDriver.session();
+  try {
+    for (const cuisine of cuisines) {
+      await session.run(
+        `
+        MERGE (u:User {id: $userId})
+        MERGE (c:Cuisine {name: $cuisine})
+        MERGE (u)-[r:PREFERS]->(c)
+        ON CREATE SET r.weight = 0.3
+        ON MATCH  SET r.weight = r.weight + 0.1
+        `,
+        { userId, cuisine },
+      );
+    }
+  } finally {
+    await session.close();
+  }
+}
 
 export const findOrCreateUser = async (input: RegisterInput): Promise<User> => {
   const existing = await prisma.user.findUnique({
@@ -21,6 +52,7 @@ export const findOrCreateUser = async (input: RegisterInput): Promise<User> => {
       email: input.email,
       name: input.name,
       phone: input.phone,
+      role: input.role ?? "CUSTOMER",
       dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : undefined,
       preferredLanguage: input.preferredLanguage,
       diningPreferences: hasDiningPrefs
@@ -34,6 +66,13 @@ export const findOrCreateUser = async (input: RegisterInput): Promise<User> => {
         : undefined,
     },
   });
+
+  // Seed cuisine preferences into Neo4j for immediate AI personalisation
+  if (input.cuisines && input.cuisines.length > 0) {
+    seedUserPreferences(user.id, input.cuisines).catch((err) =>
+      console.error("Neo4j preference seed failed (non-fatal):", err),
+    );
+  }
 
   await sendEmail(
     user.email,

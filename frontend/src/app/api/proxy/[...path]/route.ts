@@ -11,11 +11,13 @@ async function proxy(
   const url = `${BACKEND}/api/${path.join("/")}${req.nextUrl.search}`;
 
   const token = req.cookies.get(AUTH_COOKIE)?.value;
+  const clientAuthorization = req.headers.get("authorization");
 
   const headers: HeadersInit = {
     "Content-Type": "application/json",
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (clientAuthorization) headers["Authorization"] = clientAuthorization;
+  else if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const body =
     req.method !== "GET" && req.method !== "HEAD"

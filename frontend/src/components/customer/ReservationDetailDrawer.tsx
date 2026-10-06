@@ -17,10 +17,12 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { Reservation } from "./ReservationCard";
+import { ReservationJourney } from "./ReservationJourney";
 
 const STATUS_COLOURS: Record<string, string> = {
   PENDING: "bg-yellow-100 text-yellow-800",
   CONFIRMED: "bg-green-100 text-green-800",
+  CHECKED_IN: "bg-blue-100 text-blue-800",
   CANCELLED: "bg-red-100 text-red-800",
   COMPLETED: "bg-blue-100 text-blue-800",
   NO_SHOW: "bg-gray-100 text-gray-700",
@@ -137,6 +139,8 @@ export function ReservationDetailDrawer({ reservation: r, onClose }: Props) {
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
 
+          <ReservationJourney reservation={r} />
+
           {/* Booking details */}
           <Section title="Booking Details" icon={CalendarDays}>
             <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 space-y-2.5">
@@ -148,7 +152,7 @@ export function ReservationDetailDrawer({ reservation: r, onClose }: Props) {
                 <div className="pt-1 border-t border-border">
                   <p className="text-xs text-muted-foreground flex gap-1.5">
                     <MessageSquare className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <span className="italic">"{r.specialRequests}"</span>
+                    <span className="italic">&ldquo;{r.specialRequests}&rdquo;</span>
                   </p>
                 </div>
               )}
@@ -184,7 +188,7 @@ export function ReservationDetailDrawer({ reservation: r, onClose }: Props) {
           )}
 
           {/* Payment */}
-          {r.payment && (
+          {r.payment ? (
             <Section title="Payment" icon={CreditCard}>
               <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 space-y-2.5">
                 <Row
@@ -196,6 +200,9 @@ export function ReservationDetailDrawer({ reservation: r, onClose }: Props) {
                   }
                 />
                 <Row label="Currency" value={r.payment.currency} />
+                {r.payment.status === "REFUNDED" && r.payment.refundedAt && (
+                  <Row label="Refunded on" value={new Date(r.payment.refundedAt).toLocaleDateString("en-GB")} />
+                )}
                 {orderItems.length > 0 && (
                   <>
                     <div className="border-t border-border pt-2.5">
@@ -223,6 +230,13 @@ export function ReservationDetailDrawer({ reservation: r, onClose }: Props) {
                     </a>
                   </div>
                 )}
+              </div>
+            </Section>
+          ) : (
+            <Section title="Payment" icon={CreditCard}>
+              <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-3">
+                <p className="text-sm font-medium text-foreground">Payment not completed</p>
+                <p className="mt-1 text-xs text-muted-foreground">Return to the reservation card to continue to secure checkout.</p>
               </div>
             </Section>
           )}

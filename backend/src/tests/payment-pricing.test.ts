@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 
 // Pure logic: order verification + total computation, extracted from payment.service.ts
 const SERVICE_CHARGE_RATE = 0.10;
+const RESERVATION_DEPOSIT = 1000;
 
 interface OrderItemInput {
   menuItemId?: string | null;
@@ -29,7 +30,13 @@ const computeVerifiedTotal = (
 
   const subtotal = verifiedItems.reduce((s, i) => s + i.price * i.quantity, 0);
   const serviceCharge = Math.round(subtotal * SERVICE_CHARGE_RATE);
-  return { verifiedItems, subtotal, serviceCharge, total: subtotal + serviceCharge };
+  return {
+    verifiedItems,
+    deposit: RESERVATION_DEPOSIT,
+    subtotal,
+    serviceCharge,
+    total: RESERVATION_DEPOSIT + subtotal + serviceCharge,
+  };
 };
 
 describe("computeVerifiedTotal (payment pricing)", () => {
@@ -50,7 +57,15 @@ describe("computeVerifiedTotal (payment pricing)", () => {
       dbPriceMap,
     );
     expect(result.serviceCharge).toBe(100); // round(99.9) = 100
-    expect(result.total).toBe(1099);
+    expect(result.total).toBe(2099);
+  });
+
+  it("charges only the reservation deposit when no food is pre-ordered", () => {
+    const result = computeVerifiedTotal([], new Map());
+    expect(result.subtotal).toBe(0);
+    expect(result.serviceCharge).toBe(0);
+    expect(result.deposit).toBe(1000);
+    expect(result.total).toBe(1000);
   });
 
   it("keeps the client-supplied price for an item with no menuItemId", () => {

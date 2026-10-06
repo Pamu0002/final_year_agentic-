@@ -15,11 +15,11 @@ interface ReservationStatusPieChartProps {
 }
 
 const COLORS: Record<string, string> = {
-  CONFIRMED: "#3b82f6",
-  PENDING: "#f59e0b",
-  COMPLETED: "#10b981",
-  CANCELLED: "#ef4444",
-  NO_SHOW: "#6b7280",
+  CONFIRMED: "var(--chart-5)",
+  PENDING: "var(--chart-3)",
+  COMPLETED: "var(--chart-1)",
+  CANCELLED: "var(--destructive)",
+  NO_SHOW: "var(--muted-foreground)",
 };
 
 export function ReservationStatusPieChart({

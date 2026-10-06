@@ -91,10 +91,18 @@ function HistorySidebar({
             {sessions.map((s) => {
               const isActive = s.id === activeSessionId;
               return (
-                <button
+                <div
                   key={s.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onResume(s)}
-                  className={`group w-full text-left rounded-xl px-3 py-2.5 transition-colors ${
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onResume(s);
+                    }
+                  }}
+                  className={`group w-full text-left rounded-xl px-3 py-2.5 transition-colors cursor-pointer ${
                     isActive
                       ? "bg-primary/10 border border-primary/20"
                       : "hover:bg-muted/60 border border-transparent"
@@ -105,6 +113,7 @@ function HistorySidebar({
                       {s.title ?? "New conversation"}
                     </p>
                     <button
+                      type="button"
                       onClick={(e) => remove(s.id, e)}
                       disabled={deletingId === s.id}
                       className="shrink-0 flex h-4 w-4 items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all disabled:opacity-50"
@@ -118,7 +127,7 @@ function HistorySidebar({
                   <p className="text-[10px] text-muted-foreground mt-0.5">
                     {relativeTime(s.updatedAt)}
                   </p>
-                </button>
+                </div>
               );
             })}
           </div>

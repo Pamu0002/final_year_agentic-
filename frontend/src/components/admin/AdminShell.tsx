@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
+import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { AdminSidebar } from "./AdminSidebar";
 import { AdminTopBar } from "./AdminTopBar";
-import { Menu } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 interface AdminShellProps {
   children: React.ReactNode;
@@ -12,41 +12,62 @@ interface AdminShellProps {
   name: string | null;
 }
 
+
+
 export function AdminShell({ children, email, name }: AdminShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const pathname = usePathname();
 
   return (
-    <div className="flex h-screen bg-background">
-      {sidebarOpen && (
+    <MotionConfig reducedMotion="user">
+      <div className="flex h-screen overflow-hidden bg-background">
+        {/* Mobile overlay */}
+        <AnimatePresence>
+          {sidebarOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-30 bg-black/55 backdrop-blur-sm md:hidden"
+              onClick={() => setSidebarOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Sidebar */}
         <div
-          className="fixed inset-0 z-30 bg-black/60 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      <div
-        className={`fixed inset-y-0 left-0 z-40 transform transition-transform md:relative md:translate-x-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <AdminSidebar />
-      </div>
-
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex h-16 items-center border-b bg-card px-4 md:hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
+          className={`fixed inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-out md:relative md:translate-x-0 ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          <AdminSidebar />
         </div>
 
-        <AdminTopBar email={email} name={name} />
+        {/* Main content area */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <AdminTopBar
+            email={email}
+            name={name}
+            onMenuClick={() => setSidebarOpen(true)}
+          />
 
-        <main className="flex-1 overflow-y-auto">{children}</main>
+          <main className="admin-workspace flex-1 overflow-y-auto">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={pathname}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] as const }}
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
       </div>
-    </div>
+    </MotionConfig>
   );
 }

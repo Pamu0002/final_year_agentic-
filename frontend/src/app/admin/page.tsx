@@ -1,17 +1,10 @@
 import { serverFetch } from "@/lib/server/api";
+import { requireAdmin } from "@/lib/server/auth";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { StatGrid } from "@/components/admin/StatGrid";
 import { DashboardAlerts } from "@/components/admin/DashboardAlerts";
 import { RecentReservations } from "@/components/admin/RecentReservations";
-import {
-  Users,
-  Building2,
-  CalendarDays,
-  CreditCard,
-  DollarSign,
-  AlertCircle,
-} from "lucide-react";
 
 interface AdminStats {
   totalUsers: number;
@@ -33,7 +26,8 @@ interface RecentReservation {
 }
 
 export default async function AdminDashboardPage() {
-  const [stats, recentResPage] = await Promise.all([
+  const [user, stats, recentResPage] = await Promise.all([
+    requireAdmin(),
     serverFetch<AdminStats>("admin/stats"),
     serverFetch<{ data: RecentReservation[] }>("admin/reservations?limit=5&sort=recent").catch(
       () => ({ data: [] })
@@ -41,49 +35,65 @@ export default async function AdminDashboardPage() {
   ]);
   const recentRes: RecentReservation[] = recentResPage.data ?? [];
 
+  /* Build an inline summary string for the greeting header */
+  const summaryParts: string[] = [];
+  if (stats.verificationPending > 0)
+    summaryParts.push(`${stats.verificationPending} pending verification`);
+  if (stats.activeReservations > 0)
+    summaryParts.push(`${stats.activeReservations} active reservations`);
+  summaryParts.push(`${stats.totalRestaurants} restaurants`);
+  const inlineSummary = summaryParts.join(" · ");
+
+  const displayName = user.name?.trim()?.split(" ")[0] || user.email.split("@")[0];
+
   return (
     <div>
       <PageHeader
-        title="Dashboard"
-        description="System overview for Restaurant Chatbot"
+        title="Platform overview"
+        description="Monitor AgentDine operations, activity, and performance from one place."
+        greeting={displayName}
+        inlineSummary={inlineSummary}
       />
 
-      <div className="space-y-6 p-8">
+      <div className="space-y-6 px-5 pb-10 pt-5 sm:px-7 lg:px-10">
         <DashboardAlerts verificationPending={stats.verificationPending} />
 
         <StatGrid>
           <StatCard
             label="Total Users"
             value={stats.totalUsers.toLocaleString()}
-            icon={Users}
+            icon="users"
             accent="blue"
           />
           <StatCard
             label="Total Restaurants"
             value={stats.totalRestaurants.toLocaleString()}
-            icon={Building2}
+            icon="building"
           />
           <StatCard
             label="Active Reservations"
             value={stats.activeReservations.toLocaleString()}
-            icon={CalendarDays}
+            icon="calendar"
             accent="green"
           />
           <StatCard
             label="Total Revenue"
-            value={`LKR ${stats.totalRevenue.toLocaleString()}`}
-            icon={DollarSign}
+            value={`LKR ${new Intl.NumberFormat("en-LK", {
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }).format(stats.totalRevenue)}`}
+            icon="dollar"
             accent="green"
           />
           <StatCard
             label="Total Payments"
             value={stats.totalPayments.toLocaleString()}
-            icon={CreditCard}
+            icon="card"
           />
           <StatCard
             label="Pending Verification"
             value={stats.verificationPending}
-            icon={AlertCircle}
+            icon="alert"
             accent={stats.verificationPending > 0 ? "orange" : "default"}
           />
         </StatGrid>
