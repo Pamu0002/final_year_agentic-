@@ -134,7 +134,10 @@ export default function AdminComplaintsPage() {
     setLoading(false);
   }, [page, statusFilter]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   const handleUpdate = (updated: Complaint) => {
     setComplaints((p) => p.map((c) => c.id === updated.id ? updated : c));

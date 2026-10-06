@@ -44,7 +44,7 @@ export const updateReservationStatus = async (req: AuthRequest, res: Response): 
   const { status } = req.body as { status: string };
   const result = await portalService.updateReservationStatus(
     req.user!.dbId,
-    req.params.id,
+    String(req.params.id),
     status as Parameters<typeof portalService.updateReservationStatus>[2],
   );
   res.json(result);
@@ -78,12 +78,12 @@ export const createMenuItem = async (req: AuthRequest, res: Response): Promise<v
 };
 
 export const updateMenuItem = async (req: AuthRequest, res: Response): Promise<void> => {
-  const item = await portalService.updateMenuItem(req.user!.dbId, req.params.id, req.body as Parameters<typeof portalService.updateMenuItem>[2]);
+  const item = await portalService.updateMenuItem(req.user!.dbId, String(req.params.id), req.body as Parameters<typeof portalService.updateMenuItem>[2]);
   res.json(item);
 };
 
 export const deleteMenuItem = async (req: AuthRequest, res: Response): Promise<void> => {
-  await portalService.deleteMenuItem(req.user!.dbId, req.params.id);
+  await portalService.deleteMenuItem(req.user!.dbId, String(req.params.id));
   res.status(204).end();
 };
 
@@ -93,13 +93,13 @@ export const registerRestaurant = async (req: AuthRequest, res: Response): Promi
 };
 
 export const getAvailabilityForDate = async (req: AuthRequest, res: Response): Promise<void> => {
-  const slots = await portalService.getAvailabilityForDate(req.user!.dbId, req.params.date);
+  const slots = await portalService.getAvailabilityForDate(req.user!.dbId, String(req.params.date));
   res.json(slots);
 };
 
 export const setAvailabilityForDate = async (req: AuthRequest, res: Response): Promise<void> => {
   const { slots } = req.body as { slots: Parameters<typeof portalService.setAvailabilityForDate>[2] };
-  const result = await portalService.setAvailabilityForDate(req.user!.dbId, req.params.date, slots);
+  const result = await portalService.setAvailabilityForDate(req.user!.dbId, String(req.params.date), slots);
   res.json(result);
 };
 
@@ -138,19 +138,19 @@ export const createPromotion = async (req: AuthRequest, res: Response): Promise<
 };
 
 export const updatePromotion = async (req: AuthRequest, res: Response): Promise<void> => {
-  const promo = await portalService.updatePromotion(req.user!.dbId, req.params.id, req.body as Parameters<typeof portalService.updatePromotion>[2]);
+  const promo = await portalService.updatePromotion(req.user!.dbId, String(req.params.id), req.body as Parameters<typeof portalService.updatePromotion>[2]);
   res.json(promo);
 };
 
 export const deletePromotion = async (req: AuthRequest, res: Response): Promise<void> => {
-  await portalService.deletePromotion(req.user!.dbId, req.params.id);
+  await portalService.deletePromotion(req.user!.dbId, String(req.params.id));
   res.status(204).send();
 };
 
 export const replyToReview = async (req: AuthRequest, res: Response): Promise<void> => {
   const { reply } = req.body as { reply: string };
   if (!reply) { res.status(400).json({ error: "reply is required" }); return; }
-  const result = await portalService.replyToReview(req.user!.dbId, req.params.id, reply);
+  const result = await portalService.replyToReview(req.user!.dbId, String(req.params.id), reply);
   res.json(result);
 };
 
@@ -161,7 +161,7 @@ export const getPortalAnalytics = async (req: AuthRequest, res: Response): Promi
 };
 
 export const checkInReservation = async (req: AuthRequest, res: Response): Promise<void> => {
-  const reservation = await portalService.checkInReservation(req.user!.dbId, req.params.id);
+  const reservation = await portalService.checkInReservation(req.user!.dbId, String(req.params.id));
   res.json(reservation);
 };
 
@@ -184,6 +184,6 @@ export const addHoliday = async (req: AuthRequest, res: Response): Promise<void>
 };
 
 export const removeHoliday = async (req: AuthRequest, res: Response): Promise<void> => {
-  await portalService.removeHoliday(req.user!.dbId, req.params.date);
+  await portalService.removeHoliday(req.user!.dbId, String(req.params.date));
   res.json({ success: true });
 };

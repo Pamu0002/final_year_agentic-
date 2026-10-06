@@ -6,6 +6,7 @@ This repository runs locally without Docker. The web application consists of:
 - FastAPI AI service on port `8000`
 - Express backend on port `3000`
 - Next.js frontend on port `3001`
+- Expo SDK 54 mobile application in `mobile-expo`
 
 ## Prerequisites
 
@@ -125,6 +126,63 @@ npm run dev -- -p 3001
 - AI service documentation: http://localhost:8000/docs
 
 The public landing page can render without all optional integrations. Login requires Firebase. AI chat requires Vertex AI credentials. Payments require Stripe test keys.
+
+## 8. Run Stripe payments locally
+
+Use the Stripe sandbox, not live mode. In a separate PowerShell window:
+
+```powershell
+stripe login
+stripe switch
+stripe listen --events "checkout.session.completed,checkout.session.expired,payment_intent.succeeded,payment_intent.payment_failed" --forward-to "http://localhost:3000/api/payments/webhook"
+```
+
+Choose your sandbox when `stripe switch` opens. Copy the `whsec_...` value printed by `stripe listen` into `STRIPE_WEBHOOK_SECRET` in `backend/.env`, then restart the backend. Keep the listener running while testing.
+
+Use Stripe test card `4242 4242 4242 4242`, any future expiry date, and any three-digit CVC. A successful deposit does not automatically confirm the table: the reservation remains pending until the restaurant accepts it. If the restaurant does not respond within `RESTAURANT_CONFIRMATION_MINUTES`, the backend cancels the booking and requests a refund.
+
+## 9. Create local admin accounts
+
+These commands create or update Firebase Authentication and PostgreSQL together, so valid Firebase Admin credentials are required in `backend/.env`:
+
+```powershell
+cd backend
+npm run seed:admin
+npm run seed:restaurant-admin
+```
+
+The restaurant-admin seed assigns the account to `Spice Route` by default. Override the test account or restaurant without changing source code by setting `TEST_RESTAURANT_ADMIN_EMAIL`, `TEST_RESTAURANT_ADMIN_PASSWORD`, `TEST_RESTAURANT_ADMIN_NAME`, and `TEST_RESTAURANT_NAME` in `backend/.env`.
+
+## 10. Run the Expo mobile application
+
+The Expo application uses the same backend and real database as the web frontend.
+
+```powershell
+cd mobile-expo
+Copy-Item .env.example .env
+npm install
+npx expo-doctor
+npx expo start --tunnel
+```
+
+The project targets Expo SDK 54. Install a compatible Expo Go client, or use an SDK 54 development build. For a physical phone on the same Wi-Fi network, set `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_AI_SERVICE_URL` to the PC's IPv4 address rather than `localhost`. The tunnel transports the Expo bundle; your phone still needs network access to the backend URL configured in `.env`.
+
+## Useful checks
+
+```powershell
+cd backend
+npm test
+npm run db:status
+
+cd ..\frontend
+npx tsc --noEmit
+
+cd ..\mobile-expo
+npm run typecheck
+npx expo-doctor
+```
+
+If backend startup reports `EADDRINUSE` for port 3000, an existing backend process is already running. Use that process or stop it before starting another one. If PostgreSQL is listed as `Running`, do not call `Start-Service` again.
 
 ## Running only the frontend
 

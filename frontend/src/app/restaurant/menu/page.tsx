@@ -40,7 +40,7 @@ export default async function PortalMenuPage() {
         <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-border/80 bg-card py-20 text-center shadow-xs">
           <UtensilsCrossed className="size-12 text-muted-foreground/30" />
           <p className="text-sm font-semibold text-foreground">No menu items found</p>
-          <p className="text-xs text-muted-foreground">Click the "+ Add Menu Item" button above to publish your first dish.</p>
+          <p className="text-xs text-muted-foreground">Click the &quot;+ Add Menu Item&quot; button above to publish your first dish.</p>
         </div>
       )}
 

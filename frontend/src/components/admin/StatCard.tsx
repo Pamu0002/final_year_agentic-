@@ -71,10 +71,7 @@ function useCountUp(end: number, duration = 1400, enabled = true) {
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
-    if (!enabled || end === 0) {
-      setCurrent(end);
-      return;
-    }
+    if (!enabled || end === 0) return;
 
     let raf: number;
     const start = performance.now();
@@ -95,6 +92,7 @@ function useCountUp(end: number, duration = 1400, enabled = true) {
     return () => cancelAnimationFrame(raf);
   }, [end, duration, enabled]);
 
+  if (!enabled || end === 0) return end;
   return current;
 }
 

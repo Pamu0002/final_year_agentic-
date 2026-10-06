@@ -27,7 +27,7 @@ export const clearSession = async (
   req: AuthRequest,
   res: Response,
 ): Promise<void> => {
-  await chatService.clearSession(req.params.id, req.user!.dbId);
+  await chatService.clearSession(String(req.params.id), req.user!.dbId);
   res.json({ success: true });
 };
 

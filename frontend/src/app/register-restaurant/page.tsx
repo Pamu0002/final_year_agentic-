@@ -67,7 +67,9 @@ const CUISINE_LIST = [
   "Pub & Bar",
 ];
 
-const PRICE_RANGES = [
+type PriceRange = "BUDGET" | "MODERATE" | "EXPENSIVE" | "FINE_DINING";
+
+const PRICE_RANGES: { value: PriceRange; label: string }[] = [
   { value: "BUDGET", label: "Budget ($)" },
   { value: "MODERATE", label: "Moderate ($$)" },
   { value: "EXPENSIVE", label: "Upscale ($$$)" },
@@ -94,7 +96,7 @@ export default function RegisterRestaurantPage() {
   const [restaurantPhone, setRestaurantPhone] = useState("");
   const [restaurantEmail, setRestaurantEmail] = useState("");
   const [website, setWebsite] = useState("");
-  const [priceRange, setPriceRange] = useState<"BUDGET" | "MODERATE" | "EXPENSIVE" | "FINE_DINING">("MODERATE");
+  const [priceRange, setPriceRange] = useState<PriceRange>("MODERATE");
 
   // Step 3: Cuisine & Capacity
   const [selectedCuisines, setSelectedCuisines] = useState<string[]>(["Sri Lankan"]);
@@ -425,7 +427,7 @@ export default function RegisterRestaurantPage() {
                     <select
                       id="priceRange"
                       value={priceRange}
-                      onChange={(e) => setPriceRange(e.target.value as any)}
+                      onChange={(e) => setPriceRange(e.target.value as PriceRange)}
                       className="h-12 w-full rounded-xl border border-input bg-background px-3 text-base outline-none focus:ring-2 focus:ring-primary"
                     >
                       {PRICE_RANGES.map((p) => (

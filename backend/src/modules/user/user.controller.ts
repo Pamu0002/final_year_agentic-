@@ -55,12 +55,12 @@ export const addFavorite = async (req: AuthRequest, res: Response): Promise<void
 };
 
 export const removeFavorite = async (req: AuthRequest, res: Response): Promise<void> => {
-  await userService.removeFavorite(req.user!.dbId, req.params.restaurantId);
+  await userService.removeFavorite(req.user!.dbId, String(req.params.restaurantId));
   res.status(204).send();
 };
 
 export const checkFavorite = async (req: AuthRequest, res: Response): Promise<void> => {
-  const result = await userService.checkFavorite(req.user!.dbId, req.params.restaurantId);
+  const result = await userService.checkFavorite(req.user!.dbId, String(req.params.restaurantId));
   res.json(result);
 };
 
@@ -76,7 +76,7 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
 };
 
 export const markNotificationRead = async (req: AuthRequest, res: Response): Promise<void> => {
-  await userService.markNotificationRead(req.params.id, req.user!.dbId);
+  await userService.markNotificationRead(String(req.params.id), req.user!.dbId);
   res.status(204).send();
 };
 

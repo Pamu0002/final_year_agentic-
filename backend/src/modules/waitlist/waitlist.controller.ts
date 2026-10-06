@@ -22,6 +22,6 @@ export const getMyWaitlist = async (req: AuthRequest, res: Response): Promise<vo
 };
 
 export const leaveWaitlist = async (req: AuthRequest, res: Response): Promise<void> => {
-  await waitlistService.leaveWaitlist(req.params.id, req.user!.dbId);
+  await waitlistService.leaveWaitlist(String(req.params.id), req.user!.dbId);
   res.status(204).send();
 };

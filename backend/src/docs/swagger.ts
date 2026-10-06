@@ -23,16 +23,6 @@ export const buildSwaggerDocument = () => {
         "Agentic restaurant discovery and reservation system for the Colombo district, Sri Lanka.",
     },
     servers: [{ url: "http://localhost:3000", description: "Local development" }],
-    components: {
-      securitySchemes: {
-        bearerAuth: {
-          type: "http",
-          scheme: "bearer",
-          bearerFormat: "JWT",
-          description: "Firebase ID token — obtain from Firebase Auth client SDK",
-        },
-      },
-    },
   });
 };
 

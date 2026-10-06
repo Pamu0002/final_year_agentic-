@@ -19,22 +19,22 @@ export const getAllRestaurants = async (req: Request, res: Response): Promise<vo
 };
 
 export const getRestaurantById = async (req: Request, res: Response): Promise<void> => {
-  res.json(await adminService.getRestaurantById(req.params.id));
+  res.json(await adminService.getRestaurantById(String(req.params.id)));
 };
 
 // POST /admin/restaurants/:id/verify — sets isVerified: true
 export const verifyRestaurant = async (req: Request, res: Response): Promise<void> => {
-  res.json(await adminService.verifyRestaurant(req.params.id));
+  res.json(await adminService.verifyRestaurant(String(req.params.id)));
 };
 
 // PATCH /admin/restaurants/:id — general field update (handles isActive toggle too)
 export const updateRestaurant = async (req: Request, res: Response): Promise<void> => {
-  res.json(await adminService.updateRestaurant(req.params.id, req.body as Record<string, unknown>));
+  res.json(await adminService.updateRestaurant(String(req.params.id), req.body as Record<string, unknown>));
 };
 
 // PATCH /admin/restaurants/:id/active — legacy route kept for compat
 export const toggleRestaurantActive = async (req: Request, res: Response): Promise<void> => {
-  res.json(await adminService.toggleRestaurantActive(req.params.id, req.body.isActive as boolean));
+  res.json(await adminService.toggleRestaurantActive(String(req.params.id), req.body.isActive as boolean));
 };
 
 export const createRestaurant = async (req: Request, res: Response): Promise<void> => {
@@ -49,9 +49,10 @@ export const createRestaurant = async (req: Request, res: Response): Promise<voi
 };
 
 export const deleteRestaurant = async (req: Request, res: Response): Promise<void> => {
-  await adminService.deleteRestaurant(req.params.id);
+  const restaurantId = String(req.params.id);
+  await adminService.deleteRestaurant(restaurantId);
   await adminService.logAdminAction(
-    (req as any).user.dbId, (req as any).user.email, "DELETE_RESTAURANT", "Restaurant", req.params.id, undefined, req.ip,
+    (req as any).user.dbId, (req as any).user.email, "DELETE_RESTAURANT", "Restaurant", restaurantId, undefined, req.ip,
   );
   res.status(204).send();
 };
@@ -137,25 +138,27 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
 };
 
 export const getUserById = async (req: Request, res: Response): Promise<void> => {
-  res.json(await adminService.getUserById(req.params.id));
+  res.json(await adminService.getUserById(String(req.params.id)));
 };
 
 export const updateUserRole = async (req: Request, res: Response): Promise<void> => {
-  res.json(await adminService.updateUserRole(req.params.id, req.body as adminService.UpdateRoleInput));
+  res.json(await adminService.updateUserRole(String(req.params.id), req.body as adminService.UpdateRoleInput));
 };
 
 export const suspendUser = async (req: Request, res: Response): Promise<void> => {
-  const user = await adminService.suspendUser(req.params.id);
+  const userId = String(req.params.id);
+  const user = await adminService.suspendUser(userId);
   await adminService.logAdminAction(
-    (req as any).user.dbId, (req as any).user.email, "SUSPEND_USER", "User", req.params.id, undefined, req.ip,
+    (req as any).user.dbId, (req as any).user.email, "SUSPEND_USER", "User", userId, undefined, req.ip,
   );
   res.json(user);
 };
 
 export const activateUser = async (req: Request, res: Response): Promise<void> => {
-  const user = await adminService.activateUser(req.params.id);
+  const userId = String(req.params.id);
+  const user = await adminService.activateUser(userId);
   await adminService.logAdminAction(
-    (req as any).user.dbId, (req as any).user.email, "ACTIVATE_USER", "User", req.params.id, undefined, req.ip,
+    (req as any).user.dbId, (req as any).user.email, "ACTIVATE_USER", "User", userId, undefined, req.ip,
   );
   res.json(user);
 };
@@ -171,25 +174,28 @@ export const getAllReviews = async (req: Request, res: Response): Promise<void> 
 };
 
 export const hideReview = async (req: Request, res: Response): Promise<void> => {
-  const review = await adminService.hideReview(req.params.id);
+  const reviewId = String(req.params.id);
+  const review = await adminService.hideReview(reviewId);
   await adminService.logAdminAction(
-    (req as any).user.dbId, (req as any).user.email, "HIDE_REVIEW", "Review", req.params.id, undefined, req.ip,
+    (req as any).user.dbId, (req as any).user.email, "HIDE_REVIEW", "Review", reviewId, undefined, req.ip,
   );
   res.json(review);
 };
 
 export const deleteReview = async (req: Request, res: Response): Promise<void> => {
-  await adminService.deleteReview(req.params.id);
+  const reviewId = String(req.params.id);
+  await adminService.deleteReview(reviewId);
   await adminService.logAdminAction(
-    (req as any).user.dbId, (req as any).user.email, "DELETE_REVIEW", "Review", req.params.id, undefined, req.ip,
+    (req as any).user.dbId, (req as any).user.email, "DELETE_REVIEW", "Review", reviewId, undefined, req.ip,
   );
   res.status(204).send();
 };
 
 export const refundPayment = async (req: Request, res: Response): Promise<void> => {
-  const payment = await adminService.refundPayment(req.params.id);
+  const paymentId = String(req.params.id);
+  const payment = await adminService.refundPayment(paymentId);
   await adminService.logAdminAction(
-    (req as any).user.dbId, (req as any).user.email, "REFUND_PAYMENT", "Payment", req.params.id, undefined, req.ip,
+    (req as any).user.dbId, (req as any).user.email, "REFUND_PAYMENT", "Payment", paymentId, undefined, req.ip,
   );
   res.json(payment);
 };
@@ -216,9 +222,10 @@ export const getAllComplaints = async (req: Request, res: Response): Promise<voi
 
 export const updateComplaint = async (req: Request, res: Response): Promise<void> => {
   const { status, adminNote } = req.body as { status?: string; adminNote?: string };
-  const complaint = await adminService.updateComplaint(req.params.id, { status, adminNote });
+  const complaintId = String(req.params.id);
+  const complaint = await adminService.updateComplaint(complaintId, { status, adminNote });
   await adminService.logAdminAction(
-    (req as any).user.dbId, (req as any).user.email, "UPDATE_COMPLAINT", "Complaint", req.params.id, status, req.ip,
+    (req as any).user.dbId, (req as any).user.email, "UPDATE_COMPLAINT", "Complaint", complaintId, status, req.ip,
   );
   res.json(complaint);
 };
