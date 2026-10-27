@@ -27,6 +27,12 @@
       "expo-router",
       "expo-notifications",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow AgentDine to use your location to find nearby restaurants."
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "AgentDine uses your selected photos for dining reviews and profile images.",

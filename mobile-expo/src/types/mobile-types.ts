@@ -29,6 +29,7 @@ export interface Restaurant {
   reservationDeposit: number;
   latitude: number | null;
   longitude: number | null;
+  distanceKm?: number;
   openingHours: OpeningHours | null;
 }
 

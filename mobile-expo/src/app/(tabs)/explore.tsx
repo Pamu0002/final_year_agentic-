@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import * as Location from 'expo-location';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Screen } from '@/components/screen';
 import { brand } from '@/constants/brand';
@@ -22,12 +23,18 @@ const PRICE_MAP: Record<string, string> = {
 
 export default function ExploreScreen() {
   const { user } = useAuth();
+  const { nearby } = useLocalSearchParams<{ nearby?: string }>();
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userCuisines, setUserCuisines] = useState<string[]>([]);
+  const [nearbyActive, setNearbyActive] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const handledNearbyParam = useRef(false);
+  const requestSequence = useRef(0);
 
   useEffect(() => {
     if (!user) { setUserCuisines([]); return; }
@@ -41,13 +48,66 @@ export default function ExploreScreen() {
     ).length;
   };
 
-  useEffect(() => {
+  const loadRestaurants = useCallback(async (coords?: { latitude: number; longitude: number }) => {
+    const requestId = ++requestSequence.current;
     setLoading(true);
-    api<RestaurantListResponse>('/api/restaurants?limit=50')
-      .then((result) => setRestaurants(result.data))
-      .catch(() => setError('Could not reach backend server. Make sure server is running and check EXPO_PUBLIC_API_URL.'))
-      .finally(() => setLoading(false));
+    setError(null);
+    const params = new URLSearchParams({ limit: '50' });
+    if (coords) {
+      params.set('lat', String(coords.latitude));
+      params.set('lng', String(coords.longitude));
+      params.set('radiusKm', '25');
+    }
+    try {
+      const result = await api<RestaurantListResponse>(`/api/restaurants?${params.toString()}`);
+      if (requestId === requestSequence.current) setRestaurants(result.data);
+    } catch {
+      if (requestId === requestSequence.current) setError('Could not reach backend server. Make sure server is running and check EXPO_PUBLIC_API_URL.');
+    } finally {
+      if (requestId === requestSequence.current) setLoading(false);
+    }
   }, []);
+
+  const findNearby = useCallback(async () => {
+    setLocating(true);
+    setLocationError(null);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        setLocationError('Location permission is needed to find restaurants near you.');
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      await loadRestaurants(position.coords);
+      setNearbyActive(true);
+    } catch {
+      setLocationError('Your location could not be detected. Check location services and try again.');
+    } finally {
+      setLocating(false);
+    }
+  }, [loadRestaurants]);
+
+  const clearNearby = useCallback(async () => {
+    setNearbyActive(false);
+    setLocationError(null);
+    handledNearbyParam.current = false;
+    router.setParams({ nearby: undefined });
+    await loadRestaurants();
+  }, [loadRestaurants]);
+
+  useEffect(() => {
+    loadRestaurants();
+  }, [loadRestaurants]);
+
+  useEffect(() => {
+    if (nearby !== '1') {
+      handledNearbyParam.current = false;
+      return;
+    }
+    if (handledNearbyParam.current) return;
+    handledNearbyParam.current = true;
+    findNearby();
+  }, [findNearby, nearby]);
 
   const visible = restaurants
     .filter((r) => {
@@ -61,6 +121,7 @@ export default function ExploreScreen() {
       return matchesSearch && matchesFilter;
     })
     .sort((a, b) => {
+      if (nearbyActive) return (a.distanceKm ?? Number.POSITIVE_INFINITY) - (b.distanceKm ?? Number.POSITIVE_INFINITY);
       const scoreA = getMatchScore(a);
       const scoreB = getMatchScore(b);
       if (scoreA !== scoreB) return scoreB - scoreA;
@@ -88,6 +149,26 @@ export default function ExploreScreen() {
           </Pressable>
         )}
       </View>
+
+      <Pressable
+        style={[styles.nearbyButton, nearbyActive && styles.nearbyButtonActive]}
+        onPress={nearbyActive ? clearNearby : findNearby}
+        disabled={locating || loading}
+      >
+        {locating ? (
+          <ActivityIndicator size="small" color={nearbyActive ? '#FFFFFF' : brand.green} />
+        ) : (
+          <Ionicons name={nearbyActive ? 'close-circle-outline' : 'navigate-outline'} size={18} color={nearbyActive ? '#FFFFFF' : brand.green} />
+        )}
+        <Text style={[styles.nearbyButtonText, nearbyActive && styles.nearbyButtonTextActive]}>
+          {locating ? 'Finding your location…' : nearbyActive ? 'Clear nearby results' : 'Find restaurants near me'}
+        </Text>
+      </Pressable>
+
+      {locationError && <Text style={styles.locationError}>{locationError}</Text>}
+      {nearbyActive && !loading && (
+        <Text style={styles.nearbySummary}>{visible.length} restaurant{visible.length === 1 ? '' : 's'} within 25 km, nearest first</Text>
+      )}
 
       {/* Category Filter Pills */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filters}>
@@ -168,7 +249,9 @@ export default function ExploreScreen() {
 
                 <View style={styles.cardFooter}>
                   <Text style={styles.link}>View menu & book table →</Text>
-                  {restaurant.reservationDeposit > 0 && (
+                  {nearbyActive && restaurant.distanceKm != null ? (
+                    <Text style={styles.distanceBadge}>{restaurant.distanceKm.toFixed(1)} km away</Text>
+                  ) : restaurant.reservationDeposit > 0 && (
                     <Text style={styles.depositBadge}>Deposit LKR {restaurant.reservationDeposit}</Text>
                   )}
                 </View>
@@ -196,6 +279,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   input: { flex: 1, height: 48, fontSize: 15, color: brand.ink },
+  nearbyButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: brand.green, borderRadius: 99, paddingHorizontal: 13, paddingVertical: 8 },
+  nearbyButtonActive: { backgroundColor: brand.green },
+  nearbyButtonText: { color: brand.green, fontWeight: '700', fontSize: 13 },
+  nearbyButtonTextActive: { color: '#FFFFFF' },
+  locationError: { color: '#B42318', backgroundColor: '#FDECEC', borderRadius: 10, padding: 10, fontSize: 12, lineHeight: 17 },
+  nearbySummary: { color: brand.muted, fontSize: 12, fontWeight: '600' },
   filterScroll: { marginBottom: 16, maxHeight: 42 },
   filters: { flexDirection: 'row', gap: 8, paddingRight: 16 },
   filter: {
@@ -234,6 +323,7 @@ const styles = StyleSheet.create({
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
   link: { color: brand.green, fontWeight: '700', fontSize: 13 },
   depositBadge: { fontSize: 11, color: brand.coral, fontWeight: '600', backgroundColor: '#F0E6D6', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  distanceBadge: { fontSize: 11, color: brand.green, fontWeight: '700', backgroundColor: brand.mint, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 },
   error: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: '#F0E6D6', padding: 14, borderRadius: 14 },
   errorText: { color: brand.ink, flex: 1, lineHeight: 19, fontSize: 13 },
   emptyContainer: { alignItems: 'center', gap: 10, marginTop: 32 },

@@ -170,7 +170,7 @@ export default function HomeScreen() {
 
             <Pressable
               style={styles.findNearBtn}
-              onPress={() => router.push('/(tabs)/explore')}
+              onPress={() => router.push({ pathname: '/(tabs)/explore', params: { nearby: '1' } })}
             >
               <Ionicons name="compass-outline" size={16} color={brand.ink} />
               <Text style={styles.findNearText}>Find near me</Text>

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
@@ -25,6 +25,12 @@ type Message = {
   recommendations?: { id?: string; restaurantId?: string; name: string; area: string; cuisine?: string }[];
 };
 
+type SavedChatSession = {
+  id: string;
+  title?: string | null;
+  messages: { role: 'user' | 'assistant'; content: string }[];
+};
+
 const paymentUrlFrom = (text: string) => text.match(/Payment link:\s*(https?:\/\/\S+)/i)?.[1] ?? text.match(/https:\/\/checkout\.stripe\.com\/\S+/)?.[0];
 
 const SUGGESTIONS = [
@@ -36,6 +42,7 @@ const SUGGESTIONS = [
 
 export default function ChatScreen() {
   const { user } = useAuth();
+  const { sessionId: requestedSessionId } = useLocalSearchParams<{ sessionId?: string }>();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -45,13 +52,48 @@ export default function ChatScreen() {
     },
   ]);
   const [loading, setLoading] = useState(false);
-  const [sessionId] = useState(() => Crypto.randomUUID());
+  const [sessionId, setSessionId] = useState(() => Crypto.randomUUID());
+  const [loadedSessionId, setLoadedSessionId] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const [savedPreferences, setSavedPreferences] = useState<Partial<DiningPreferences>>({});
 
   useEffect(() => {
     if (!user) { setSavedPreferences({}); return; }
     api<Partial<DiningPreferences>>('/api/users/me/preferences').then(setSavedPreferences).catch(() => undefined);
   }, [user]);
+
+  useEffect(() => {
+    if (!user || !requestedSessionId || loadedSessionId === requestedSessionId) return;
+    let active = true;
+    setResuming(true);
+    setResumeError(null);
+    api<SavedChatSession[]>('/api/chat/history')
+      .then((sessions) => {
+        if (!active) return;
+        const saved = sessions.find((item) => item.id === requestedSessionId);
+        if (!saved) throw new Error('This saved conversation is no longer available.');
+        const restored = Array.isArray(saved.messages)
+          ? saved.messages
+              .filter((message) => (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
+              .map((message, index) => ({ id: index + 1, from: message.role, text: message.content } satisfies Message))
+          : [];
+        setMessages(restored.length > 0 ? restored : [{ id: 1, from: 'assistant', text: 'Continue your dining conversation whenever you are ready.' }]);
+        setSessionId(saved.id);
+        setLoadedSessionId(saved.id);
+      })
+      .catch((error: Error) => active && setResumeError(error.message))
+      .finally(() => active && setResuming(false));
+    return () => { active = false; };
+  }, [loadedSessionId, requestedSessionId, user]);
+
+  const startNewConversation = () => {
+    setSessionId(Crypto.randomUUID());
+    setLoadedSessionId(null);
+    setResumeError(null);
+    setMessages([{ id: 1, from: 'assistant', text: "Hello! I'm your AgentDine AI assistant. What are you craving today, or what occasion are you planning for?" }]);
+    router.replace('/(tabs)/chat');
+  };
 
   const userPrefs = savedPreferences;
   const userCuisines: string[] = userPrefs?.cuisines || [];
@@ -140,14 +182,17 @@ export default function ChatScreen() {
           <Text style={styles.title}>AI Dining Assistant</Text>
           <Text style={styles.subtitle}>{user ? 'Personalized suggestions with saved history' : 'Guest mode · 3 free messages'}</Text>
         </View>
-        {user && <Pressable onPress={() => router.push('/chat-history')}><Ionicons name="time-outline" size={23} color={brand.green}/></Pressable>}
+        {loadedSessionId && <Pressable style={styles.headerAction} onPress={startNewConversation} accessibilityLabel="Start a new conversation"><Ionicons name="add" size={21} color={brand.green}/></Pressable>}
+        {user && <Pressable style={styles.headerAction} onPress={() => router.push('/chat-history')} accessibilityLabel="Open chat history"><Ionicons name="time-outline" size={23} color={brand.green}/></Pressable>}
       </View>
 
       {/* Connection Notice */}
       <View style={styles.notice}>
         <Ionicons name="checkmark-circle-outline" size={16} color={brand.green} />
-        <Text style={styles.noticeText}>{user ? 'AI Concierge: Active & saving this chat' : 'Try AI without an account'}</Text>
+        <Text style={styles.noticeText}>{loadedSessionId ? 'Saved conversation restored · new replies will continue here' : user ? 'AI Concierge: Active & saving this chat' : 'Try AI without an account'}</Text>
       </View>
+
+      {resumeError && <Text style={styles.resumeError}>{resumeError}</Text>}
 
       {!user && <Pressable style={styles.guestBanner} onPress={() => router.push('/sign-in')}><Text style={styles.guestText}>Sign in for unlimited chat and personalised recommendations →</Text></Pressable>}
 
@@ -177,7 +222,9 @@ export default function ChatScreen() {
         contentContainerStyle={styles.messages}
         showsVerticalScrollIndicator={false}
       >
-        {messages.map((message) => (
+        {resuming ? (
+          <View style={styles.resumeLoading}><ActivityIndicator color={brand.green}/><Text style={styles.bubbleText}>Restoring conversation…</Text></View>
+        ) : messages.map((message) => (
           <View
             key={message.id}
             style={[styles.bubble, message.from === 'user' ? styles.userBubble : styles.aiBubble]}
@@ -230,9 +277,9 @@ export default function ChatScreen() {
           onSubmitEditing={() => send()}
           placeholder="Ask about restaurants, menus, or tables..."
           placeholderTextColor={brand.muted}
-          editable={!loading}
+          editable={!loading && !resuming}
         />
-        <Pressable style={styles.send} onPress={() => send()} disabled={loading || !input.trim()}>
+        <Pressable style={styles.send} onPress={() => send()} disabled={loading || resuming || !input.trim()}>
           <Ionicons name="send" size={18} color="#FFFFFF" />
         </Pressable>
       </View>
@@ -245,6 +292,7 @@ const styles = StyleSheet.create({
   aiIcon: { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', backgroundColor: brand.green },
   title: { fontSize: 20, fontWeight: '700', color: brand.ink },
   subtitle: { fontSize: 13, color: brand.muted, marginTop: 1 },
+  headerAction: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: brand.mint },
   authLockCard: {
     marginTop: 40,
     alignItems: 'center',
@@ -269,6 +317,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   noticeText: { color: brand.green, fontSize: 12, fontWeight: '600' },
+  resumeError: { color: '#B42318', backgroundColor: '#FDECEC', borderRadius: 10, padding: 10, fontSize: 12 },
+  resumeLoading: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 9, padding: 18 },
   guestBanner: { backgroundColor: brand.greenDark, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, marginBottom: 8 },
   guestText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
   suggestionScroll: { maxHeight: 38, marginBottom: 8 },
