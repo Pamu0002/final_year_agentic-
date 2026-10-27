@@ -98,8 +98,11 @@ export interface Reservation {
 export interface WaitlistEntry {
   id: string;
   restaurantId: string;
+  restaurant?: { id: string; name: string };
+  date: string;
+  time: string;
   partySize: number;
-  status: 'WAITING' | 'SEATED' | 'CANCELLED';
+  status: 'WAITING' | 'NOTIFIED' | 'SEATED' | 'CANCELLED' | 'EXPIRED';
   position?: number;
   estimatedWaitMinutes?: number;
 }
@@ -111,4 +114,47 @@ export interface UserProfile {
   dietaryPreferences?: string[];
   loyaltyPoints?: number;
   tier?: 'SILVER' | 'GOLD' | 'PLATINUM';
+}
+
+export interface DiningPreferences {
+  cuisines: string[];
+  dietaryRestrictions: string[];
+  budgetPreference?: 'BUDGET' | 'MODERATE' | 'EXPENSIVE' | 'FINE_DINING';
+  preferredDiningTimes: string[];
+  seatingPreferences: string[];
+  occasions: string[];
+}
+
+export interface NotificationItem {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+  data?: Record<string, unknown> | null;
+}
+
+export interface Complaint {
+  id: string;
+  subject: string;
+  description: string;
+  status: string;
+  adminNote?: string | null;
+  createdAt: string;
+  restaurant?: { name: string } | null;
+}
+
+export interface LoyaltyAccount {
+  points: number;
+  tier: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM';
+  totalEarned: number;
+}
+
+export interface LoyaltyTransaction {
+  id: string;
+  points: number;
+  type: string;
+  description: string;
+  createdAt: string;
 }

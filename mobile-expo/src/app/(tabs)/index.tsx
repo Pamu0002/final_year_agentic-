@@ -39,7 +39,7 @@ export default function HomeScreen() {
         .then((items) => {
           if (!mounted) return;
           const active = items
-            .filter((item) => ['PENDING', 'CONFIRMED', 'CHECKED_IN'].includes(item.status))
+            .filter((item) => ['PENDING', 'MODIFIED', 'CONFIRMED', 'CHECKED_IN'].includes(item.status))
             .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`))[0];
           const waitingForReview = items.find((item) => item.status === 'COMPLETED' && !item.review);
           setNextBooking(active || waitingForReview || null);
@@ -56,10 +56,12 @@ export default function HomeScreen() {
   }, [user]);
 
   const bookingAction = nextBooking
-    ? nextBooking.payment?.status !== 'SUCCEEDED' && ['PENDING', 'CONFIRMED'].includes(nextBooking.status)
+    ? nextBooking.payment?.status !== 'SUCCEEDED' && ['PENDING', 'MODIFIED', 'CONFIRMED'].includes(nextBooking.status)
       ? { eyebrow: 'ACTION REQUIRED', title: 'Complete your deposit', copy: 'Secure the booking so the restaurant can review it.', icon: 'card-outline' as const }
       : nextBooking.status === 'PENDING'
         ? { eyebrow: 'RESTAURANT RESPONSE', title: 'Waiting for confirmation', copy: 'Payment received. You will be notified as soon as the restaurant responds.', icon: 'storefront-outline' as const }
+        : nextBooking.status === 'MODIFIED'
+          ? { eyebrow: 'CHANGES SENT', title: 'Waiting for reconfirmation', copy: 'The restaurant is reviewing your updated date, time, or party size.', icon: 'time-outline' as const }
         : nextBooking.status === 'CONFIRMED'
           ? { eyebrow: 'YOU’RE ALL SET', title: 'Your table is confirmed', copy: 'Review your booking details before you arrive.', icon: 'checkmark-circle-outline' as const }
           : nextBooking.status === 'CHECKED_IN'

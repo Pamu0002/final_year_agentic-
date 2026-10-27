@@ -17,6 +17,7 @@ export const UpdatePreferencesBodySchema = z.object({
   budgetPreference: z.enum(["BUDGET", "MODERATE", "EXPENSIVE", "FINE_DINING"]).optional(),
   preferredDiningTimes: z.array(z.string()).default([]),
   seatingPreferences: z.array(z.string()).default([]),
+  occasions: z.array(z.string()).default([]),
 });
 
 export const AddFavoriteBodySchema = z.object({

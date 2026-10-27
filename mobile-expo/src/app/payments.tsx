@@ -21,7 +21,7 @@ export default function PaymentsScreen() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<PaymentRecord[]>('/api/payments')
+    api<PaymentRecord[]>('/api/payments/history')
       .then((data) => setPayments(data))
       .catch((err) => setError(err.message || 'Could not fetch payment history.'))
       .finally(() => setLoading(false));

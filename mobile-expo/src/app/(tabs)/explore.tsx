@@ -27,8 +27,12 @@ export default function ExploreScreen() {
   const [activeFilter, setActiveFilter] = useState('All');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userCuisines, setUserCuisines] = useState<string[]>([]);
 
-  const userCuisines: string[] = (user as any)?.diningPreferences?.cuisines || [];
+  useEffect(() => {
+    if (!user) { setUserCuisines([]); return; }
+    api<{ cuisines?: string[] }>('/api/users/me/preferences').then((prefs) => setUserCuisines(prefs.cuisines ?? [])).catch(() => undefined);
+  }, [user]);
 
   const getMatchScore = (r: Restaurant) => {
     if (!userCuisines.length) return 0;

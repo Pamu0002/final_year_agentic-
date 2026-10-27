@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -9,6 +10,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Screen } from '@/components/screen';
@@ -28,6 +30,25 @@ export default function ReservationsScreen() {
   // Selected Reservation Modal
   const [selectedRes, setSelectedRes] = useState<Reservation | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editDate, setEditDate] = useState('');
+  const [editTime, setEditTime] = useState('');
+  const [editParty, setEditParty] = useState('2');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const openDetails = (reservation: Reservation) => {
+    setSelectedRes(reservation); setEditDate(reservation.date.slice(0, 10)); setEditTime(reservation.time); setEditParty(String(reservation.partySize)); setEditing(false);
+  };
+
+  const saveReschedule = async () => {
+    if (!selectedRes) return;
+    setSavingEdit(true);
+    try {
+      await api(`/api/reservations/${selectedRes.id}`, { method: 'PUT', body: { date: editDate, time: editTime, partySize: Number(editParty) } });
+      setEditing(false); setSelectedRes(null); fetchReservations(); Alert.alert('Reservation updated', 'Your new booking details have been saved.');
+    } catch (error: any) { Alert.alert('Could not reschedule', error.message); }
+    finally { setSavingEdit(false); }
+  };
 
   const fetchReservations = () => {
     if (!user) return;
@@ -87,6 +108,8 @@ export default function ReservationsScreen() {
         return { bg: brand.mint, color: brand.green, label: 'Confirmed' };
       case 'PENDING':
         return { bg: '#F7ECD6', color: '#8A5B13', label: 'Awaiting restaurant' };
+      case 'MODIFIED':
+        return { bg: '#F7ECD6', color: '#8A5B13', label: 'Awaiting reconfirmation' };
       case 'CHECKED_IN':
         return { bg: '#E5EDF8', color: '#315C91', label: 'Checked in' };
       case 'COMPLETED':
@@ -169,7 +192,7 @@ export default function ReservationsScreen() {
           {filteredReservations.map((res) => {
             const badge = getStatusBadge(res.status);
             return (
-              <Pressable key={res.id} style={styles.card} onPress={() => setSelectedRes(res)}>
+              <Pressable key={res.id} style={styles.card} onPress={() => openDetails(res)}>
                 <View style={styles.cardHeader}>
                   <Text style={styles.resName}>{res.restaurant?.name || 'Restaurant'}</Text>
                   <View style={[styles.badge, { backgroundColor: badge.bg }]}>
@@ -201,6 +224,12 @@ export default function ReservationsScreen() {
                 </View>
 
                 <BookingJourney reservation={res} compact />
+                {res.status === 'COMPLETED' && (
+                  <Pressable style={styles.reviewBtn} onPress={() => router.push({ pathname: '/review/[reservationId]', params: { reservationId: res.id, restaurantName: res.restaurant?.name ?? '' } })}>
+                    <Ionicons name="star-outline" size={16} color={brand.green} />
+                    <Text style={styles.reviewBtnText}>{res.review ? 'Edit your review' : 'Write a review'}</Text>
+                  </Pressable>
+                )}
               </Pressable>
             );
           })}
@@ -211,7 +240,7 @@ export default function ReservationsScreen() {
       <Modal visible={!!selectedRes} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           {selectedRes && (
-            <View style={styles.modalCard}>
+            <ScrollView style={styles.modalCard} contentContainerStyle={styles.modalCardContent} showsVerticalScrollIndicator={false}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Reservation Details</Text>
                 <Pressable onPress={() => setSelectedRes(null)}>
@@ -256,6 +285,8 @@ export default function ReservationsScreen() {
               </View>
               <BookingJourney reservation={selectedRes} />
 
+              {editing && <View style={styles.editCard}><Text style={styles.modalSectionTitle}>New reservation details</Text><TextInput style={styles.editInput} value={editDate} onChangeText={setEditDate} placeholder="YYYY-MM-DD"/><TextInput style={styles.editInput} value={editTime} onChangeText={setEditTime} placeholder="HH:MM"/><TextInput style={styles.editInput} value={editParty} onChangeText={setEditParty} keyboardType="number-pad" placeholder="Party size"/><Pressable style={styles.saveEditBtn} onPress={saveReschedule} disabled={savingEdit}><Text style={styles.saveEditText}>{savingEdit?'Saving…':'Save changes'}</Text></Pressable></View>}
+
               <View style={styles.paymentCard}>
                 <View style={styles.paymentCardIcon}>
                   <Ionicons name="receipt-outline" size={18} color={brand.green} />
@@ -268,9 +299,12 @@ export default function ReservationsScreen() {
                       : 'Payment not completed'}
                   </Text>
                 </View>
+                {selectedRes.payment?.receiptUrl && <Pressable onPress={() => WebBrowser.openBrowserAsync(selectedRes.payment!.receiptUrl!)}><Text style={styles.receiptLink}>Receipt</Text></Pressable>}
               </View>
 
               {selectedRes.status !== 'CANCELLED' && !isPast(selectedRes.date) && (
+                <View style={{ gap: 10 }}>
+                {['PENDING','MODIFIED','CONFIRMED'].includes(selectedRes.status) && <Pressable style={styles.rescheduleBtn} onPress={() => setEditing((value) => !value)}><Text style={styles.rescheduleText}>{editing?'Close rescheduling':'Reschedule booking'}</Text></Pressable>}
                 <Pressable
                   style={styles.cancelActionBtn}
                   onPress={() => handleCancelReservation(selectedRes.id)}
@@ -282,8 +316,9 @@ export default function ReservationsScreen() {
                     <Text style={styles.cancelActionText}>Cancel Booking</Text>
                   )}
                 </Pressable>
+                </View>
               )}
-            </View>
+            </ScrollView>
           )}
         </View>
       </Modal>
@@ -349,8 +384,11 @@ const styles = StyleSheet.create({
   detailText: { color: brand.muted, fontSize: 13 },
   paymentSummary: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
   paymentText: { color: brand.ink, fontWeight: '600', fontSize: 12 },
+  reviewBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: brand.green, borderRadius: 12, paddingVertical: 10 },
+  reviewBtnText: { color: brand.green, fontWeight: '800', fontSize: 12 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 30, maxHeight: '90%' },
+  modalCard: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '90%' },
+  modalCardContent: { padding: 20, paddingBottom: 30 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   modalTitle: { fontSize: 18, fontWeight: '700', color: brand.ink },
   venueTitle: { fontSize: 22, fontWeight: '700', color: brand.ink },
@@ -366,6 +404,13 @@ const styles = StyleSheet.create({
   paymentCardIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: brand.mint, alignItems: 'center', justifyContent: 'center' },
   paymentCardLabel: { color: brand.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
   paymentCardValue: { color: brand.ink, fontSize: 13, fontWeight: '700', marginTop: 2 },
+  receiptLink: { color: brand.green, fontWeight: '800', fontSize: 12 },
+  editCard: { backgroundColor: brand.cream, borderRadius: 16, padding: 13, gap: 8, marginTop: 12 },
+  editInput: { backgroundColor: '#FFF', borderWidth: 1, borderColor: brand.border, borderRadius: 11, padding: 10, color: brand.ink },
+  saveEditBtn: { backgroundColor: brand.green, borderRadius: 11, padding: 11, alignItems: 'center' },
+  saveEditText: { color: '#FFF', fontWeight: '800' },
+  rescheduleBtn: { borderWidth: 1, borderColor: brand.green, paddingVertical: 12, borderRadius: 14, alignItems: 'center' },
+  rescheduleText: { color: brand.green, fontWeight: '800' },
   cancelActionBtn: {
     borderWidth: 1,
     borderColor: '#DC2626',

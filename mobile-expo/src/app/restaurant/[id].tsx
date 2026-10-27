@@ -17,10 +17,12 @@ import {
 import { Screen } from '@/components/screen';
 import { brand } from '@/constants/brand';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { MenuItem, Promotion, Restaurant, Review } from '@/types/mobile-types';
 
 export default function RestaurantScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
@@ -38,6 +40,8 @@ export default function RestaurantScreen() {
   const [partySize, setPartySize] = useState(2);
   const [specialRequests, setSpecialRequests] = useState('');
   const [submittingBooking, setSubmittingBooking] = useState(false);
+  const [availability, setAvailability] = useState<{ time: string; available: boolean; remainingSeats: number; reason?: string | null }[]>([]);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
 
   // Waitlist Modal State
   const [waitlistModalVisible, setWaitlistModalVisible] = useState(false);
@@ -70,13 +74,40 @@ export default function RestaurantScreen() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  useEffect(() => {
+    if (!id || (!bookingModalVisible && !waitlistModalVisible) || !bookingDate) return;
+    setAvailabilityLoading(true);
+    api<{ time: string; available: boolean; remainingSeats: number; reason?: string | null }[]>(
+      `/api/restaurants/${id}/slot-capacity?date=${encodeURIComponent(bookingDate)}&partySize=${partySize}`,
+    )
+      .then((slots) => {
+        setAvailability(slots);
+        if (!slots.some((slot) => slot.time === bookingTime && slot.available)) {
+          setBookingTime(slots.find((slot) => slot.available)?.time ?? '');
+        }
+      })
+      .catch(() => setAvailability([]))
+      .finally(() => setAvailabilityLoading(false));
+  }, [id, bookingModalVisible, waitlistModalVisible, bookingDate, partySize]);
+
+  useEffect(() => {
+    if (!id || !user) return;
+    api<{ isFavorited: boolean }>(`/api/users/me/favorites/${id}/check`)
+      .then((result) => setIsFavorite(result.isFavorited))
+      .catch(() => undefined);
+  }, [id, user]);
+
   const toggleFavorite = async () => {
+    if (!user) {
+      router.push('/sign-in');
+      return;
+    }
     setIsFavorite(!isFavorite);
     try {
       if (!isFavorite) {
-        await api('/api/users/favorites', { method: 'POST', body: { restaurantId: id } });
+        await api('/api/users/me/favorites', { method: 'POST', body: { restaurantId: id } });
       } else {
-        await api(`/api/users/favorites/${id}`, { method: 'DELETE' });
+        await api(`/api/users/me/favorites/${id}`, { method: 'DELETE' });
       }
     } catch (e) {
       // Revert if error
@@ -85,7 +116,7 @@ export default function RestaurantScreen() {
   };
 
   const handleBookTable = async () => {
-    if (!id) return;
+    if (!id || !bookingTime) return;
     setSubmittingBooking(true);
     let pendingReservationId: string | null = null;
     try {
@@ -120,12 +151,15 @@ export default function RestaurantScreen() {
   };
 
   const handleJoinWaitlist = async () => {
-    if (!id) return;
+    if (!id || !bookingTime) {
+      Alert.alert('Select a time', 'Choose a date and unavailable time before joining the waitlist.');
+      return;
+    }
     setSubmittingWaitlist(true);
     try {
       await api('/api/waitlist', {
         method: 'POST',
-        body: { restaurantId: id, partySize: waitlistPartySize },
+        body: { restaurantId: id, date: bookingDate, time: bookingTime, partySize: waitlistPartySize },
       });
       setWaitlistModalVisible(false);
       Alert.alert('Joined Waitlist!', 'You have been added to the queue.');
@@ -408,19 +442,27 @@ export default function RestaurantScreen() {
               />
 
               <Text style={styles.label}>Time Slot</Text>
+              {availabilityLoading ? (
+                <ActivityIndicator color={brand.green} style={{ marginVertical: 16 }} />
+              ) : availability.length === 0 ? (
+                <Text style={styles.emptyText}>No bookable times are available for this date and party size.</Text>
+              ) : (
               <View style={styles.timeSlots}>
-                {['12:00', '13:30', '18:00', '19:30', '21:00'].map((slot) => (
+                {availability.map((slot) => (
                   <Pressable
-                    key={slot}
-                    style={[styles.slotBtn, bookingTime === slot && styles.slotBtnActive]}
-                    onPress={() => setBookingTime(slot)}
+                    key={slot.time}
+                    disabled={!slot.available}
+                    style={[styles.slotBtn, bookingTime === slot.time && styles.slotBtnActive, !slot.available && { opacity: 0.35 }]}
+                    onPress={() => setBookingTime(slot.time)}
                   >
-                    <Text style={[styles.slotText, bookingTime === slot && styles.slotTextActive]}>
-                      {slot}
+                    <Text style={[styles.slotText, bookingTime === slot.time && styles.slotTextActive]}>
+                      {slot.time}
                     </Text>
+                    {slot.available && <Text style={[styles.slotCapacity, bookingTime === slot.time && styles.slotTextActive]}>{slot.remainingSeats} seats</Text>}
                   </Pressable>
                 ))}
               </View>
+              )}
 
               <Text style={styles.label}>Party Size: {partySize} guests</Text>
               <View style={styles.partyRow}>
@@ -482,6 +524,11 @@ export default function RestaurantScreen() {
               </Pressable>
             </View>
 
+            <Text style={styles.label}>For {bookingDate} at {bookingTime || 'a selected time'}</Text>
+            <TextInput style={styles.input} value={bookingDate} onChangeText={setBookingDate} placeholder="YYYY-MM-DD" />
+            <View style={styles.timeSlots}>
+              {availability.map((slot) => <Pressable key={slot.time} style={[styles.slotBtn, bookingTime===slot.time&&styles.slotBtnActive]} onPress={()=>setBookingTime(slot.time)}><Text style={[styles.slotText,bookingTime===slot.time&&styles.slotTextActive]}>{slot.time}</Text></Pressable>)}
+            </View>
             <Text style={styles.label}>Party Size</Text>
             <View style={styles.partyRow}>
               {[1, 2, 3, 4, 6, 8].map((num) => (
@@ -688,6 +735,7 @@ const styles = StyleSheet.create({
   slotBtn: { paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: brand.border, borderRadius: 10 },
   slotBtnActive: { backgroundColor: brand.green, borderColor: brand.green },
   slotText: { fontSize: 13, fontWeight: '600', color: brand.ink },
+  slotCapacity: { color: brand.muted, fontSize: 9, marginTop: 2 },
   slotTextActive: { color: '#FFFFFF' },
   partyRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   partyChip: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: brand.border, alignItems: 'center', justifyContent: 'center' },

@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 import {
   ActivityIndicator,
   Alert,
@@ -12,15 +14,38 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, GoogleAuthProvider, sendPasswordResetEmail, signInWithCredential, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { brand } from '@/constants/brand';
+import { api } from '@/lib/api';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function SignInScreen() {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const googleConfigured = Boolean(process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID);
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+  });
+
+  useEffect(() => {
+    if (response?.type !== 'success') return;
+    const idToken = response.authentication?.idToken;
+    if (!idToken) { Alert.alert('Google Sign In', 'Google did not return an ID token. Check the OAuth client configuration.'); return; }
+    setLoading(true);
+    signInWithCredential(auth, GoogleAuthProvider.credential(idToken))
+      .then(async ({ user }) => {
+        await api('/api/auth/register', { method: 'POST', body: { firebaseUid: user.uid, email: user.email ?? '', name: user.displayName ?? undefined } });
+        router.replace('/(tabs)/explore');
+      })
+      .catch((error) => Alert.alert('Google Sign In Failed', error.message))
+      .finally(() => setLoading(false));
+  }, [response]);
 
   const submit = async () => {
     if (!email || !password) {
@@ -46,6 +71,12 @@ export default function SignInScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const resetPassword = async () => {
+    if (!email.trim()) { Alert.alert('Enter your email', 'Type the account email first, then tap Forgot password.'); return; }
+    try { await sendPasswordResetEmail(auth, email.trim()); Alert.alert('Reset email sent', 'Check your inbox and follow the reset link.'); }
+    catch (error: any) { Alert.alert('Could not send reset email', error.message); }
   };
 
 
@@ -133,7 +164,18 @@ export default function SignInScreen() {
           {/* Social Sign-In */}
           <Pressable
             style={styles.googleBtn}
-            onPress={() => Alert.alert('Google Sign In', 'Sign in with Google requires OAuth setup.')}
+            disabled={loading}
+            onPress={() => {
+              if (!googleConfigured) {
+                Alert.alert('Google OAuth setup required', 'Add the Google OAuth client IDs to mobile-expo/.env, then restart Expo.');
+                return;
+              }
+              if (!request) {
+                Alert.alert('Google Sign In', 'Google Sign In is still loading. Please try again in a moment.');
+                return;
+              }
+              promptAsync();
+            }}
           >
             <Ionicons name="logo-google" size={18} color="#EA4335" />
             <Text style={styles.googleBtnText}>Continue with Google</Text>
@@ -160,6 +202,8 @@ export default function SignInScreen() {
               placeholderTextColor={brand.muted}
             />
           </View>
+
+          {mode === 'signin' && <Pressable onPress={resetPassword} style={{ alignSelf: 'flex-end' }}><Text style={styles.forgotText}>Forgot password?</Text></Pressable>}
 
           {/* Password Input */}
           <Text style={styles.inputLabel}>Password</Text>
@@ -275,4 +319,5 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   submitBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 16 },
+  forgotText: { color: brand.green, fontWeight: '700', fontSize: 12 },
 });

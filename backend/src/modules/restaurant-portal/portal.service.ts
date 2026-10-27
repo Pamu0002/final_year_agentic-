@@ -178,11 +178,12 @@ export const getMyMenu = async (adminId: string) => {
 
 // ── reservation mutations ─────────────────────────────────────────────────────
 
-const VALID_STATUSES = ["PENDING", "CONFIRMED", "CHECKED_IN", "CANCELLED", "COMPLETED", "NO_SHOW"] as const;
+const VALID_STATUSES = ["PENDING", "MODIFIED", "CONFIRMED", "CHECKED_IN", "CANCELLED", "COMPLETED", "NO_SHOW"] as const;
 type ReservationStatus = (typeof VALID_STATUSES)[number];
 
 const ALLOWED_STATUS_TRANSITIONS: Record<ReservationStatus, ReservationStatus[]> = {
   PENDING: ["CONFIRMED", "CANCELLED"],
+  MODIFIED: ["CONFIRMED", "CANCELLED"],
   CONFIRMED: ["CHECKED_IN", "COMPLETED", "CANCELLED", "NO_SHOW"],
   CHECKED_IN: ["COMPLETED"],
   COMPLETED: [],

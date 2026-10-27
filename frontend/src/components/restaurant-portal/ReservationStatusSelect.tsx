@@ -6,10 +6,11 @@ import { useRouter } from "next/navigation";
 import { Loader2, ChevronDown, Check, X } from "lucide-react";
 import { refreshAuthToken } from "@/lib/client/auth-token";
 
-type Status = "PENDING" | "CONFIRMED" | "CHECKED_IN" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
+type Status = "PENDING" | "MODIFIED" | "CONFIRMED" | "CHECKED_IN" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
 
 const NEXT_STATUSES: Record<Status, Status[]> = {
   PENDING: ["CONFIRMED", "CANCELLED"],
+  MODIFIED: ["CONFIRMED", "CANCELLED"],
   CONFIRMED: ["CHECKED_IN", "CANCELLED", "NO_SHOW"],
   CHECKED_IN: ["COMPLETED"],
   COMPLETED: [],
@@ -21,6 +22,12 @@ const STATUS_CONFIG: Record<Status, { label: string; dot: string; pill: string; 
   PENDING: {
     label: "Pending",
     dot: "bg-amber-400",
+    pill: "bg-amber-500/10 border-amber-500/30 dark:bg-amber-950/40 dark:border-amber-800/60",
+    text: "text-amber-700 dark:text-amber-300 font-bold",
+  },
+  MODIFIED: {
+    label: "Modified — confirm again",
+    dot: "bg-amber-500",
     pill: "bg-amber-500/10 border-amber-500/30 dark:bg-amber-950/40 dark:border-amber-800/60",
     text: "text-amber-700 dark:text-amber-300 font-bold",
   },

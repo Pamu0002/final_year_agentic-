@@ -29,8 +29,17 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(detail || `Request failed (${response.status})`);
+    try {
+      const parsed = JSON.parse(detail) as { error?: string; detail?: string; message?: string };
+      throw new Error(parsed.error ?? parsed.detail ?? parsed.message ?? `Request failed (${response.status})`);
+    } catch (error) {
+      if (error instanceof SyntaxError) throw new Error(detail || `Request failed (${response.status})`);
+      throw error;
+    }
   }
 
+  if (response.status === 204) return undefined as T;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) return undefined as T;
   return response.json() as Promise<T>;
 }

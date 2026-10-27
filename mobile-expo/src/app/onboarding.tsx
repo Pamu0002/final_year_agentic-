@@ -191,6 +191,7 @@ export default function OnboardingScreen() {
           cuisines: selectedCuisines,
           dietaryRestrictions: selectedDietary.filter((d) => d !== 'None'),
           budgetPreference: selectedBudget || undefined,
+          occasions: selectedOccasions,
         },
       });
     } catch (err: any) {

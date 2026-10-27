@@ -13,8 +13,8 @@ export default function FavoritesScreen() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<Restaurant[]>('/api/users/favorites')
-      .then((data) => setFavorites(data))
+    api<{ restaurant: Restaurant }[]>('/api/users/me/favorites')
+      .then((data) => setFavorites(data.map((favorite) => favorite.restaurant)))
       .catch((err) => setError(err.message || 'Could not fetch saved favorites.'))
       .finally(() => setLoading(false));
   }, []);
@@ -22,7 +22,7 @@ export default function FavoritesScreen() {
   const removeFavorite = async (restaurantId: string) => {
     setFavorites((current) => current.filter((r) => r.id !== restaurantId));
     try {
-      await api(`/api/users/favorites/${restaurantId}`, { method: 'DELETE' });
+      await api(`/api/users/me/favorites/${restaurantId}`, { method: 'DELETE' });
     } catch (e) {
       console.warn('Failed to remove favorite');
     }

@@ -25,6 +25,15 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "AgentDine uses your selected photos for dining reviews and profile images.",
+          "cameraPermission": "AgentDine uses the camera for dining review photos.",
+          "microphonePermission": false
+        }
+      ],
       [
         "expo-splash-screen",
         {

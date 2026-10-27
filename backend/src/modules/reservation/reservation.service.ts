@@ -355,17 +355,68 @@ export const updateReservation = async (
   userId: string,
   data: UpdateReservationInput,
 ) => {
-  return prisma.reservation.update({
+  const existing = await prisma.reservation.findFirst({
+    where: { id, userId },
+    include: { restaurant: { include: { tables: { where: { isActive: true }, select: { capacity: true } } } } },
+  });
+  if (!existing) throw Object.assign(new Error("Reservation not found"), { status: 404 });
+  if (!["PENDING", "CONFIRMED", "MODIFIED"].includes(existing.status)) {
+    throw Object.assign(new Error(`A ${existing.status.toLowerCase()} reservation cannot be rescheduled`), { status: 409 });
+  }
+
+  const nextDateText = data.date ?? existing.date.toISOString().slice(0, 10);
+  const nextDate = new Date(nextDateText);
+  const nextTime = data.time ?? existing.time;
+  const nextPartySize = data.partySize ?? existing.partySize;
+  const now = new Date();
+  if (new Date(`${nextDateText}T${nextTime}:00+05:30`) <= now) {
+    throw Object.assign(new Error("Choose a future reservation time"), { status: 409 });
+  }
+
+  const [closures, override, bookedSeatsAgg] = await Promise.all([
+    prisma.restaurantHoliday.findMany({ where: { restaurantId: existing.restaurantId, date: { lte: nextDate }, OR: [{ endDate: null, date: nextDate }, { endDate: { gte: nextDate } }] } }),
+    prisma.restaurantSlotOverride.findUnique({ where: { restaurantId_date_time: { restaurantId: existing.restaurantId, date: nextDate, time: nextTime } } }),
+    prisma.reservation.aggregate({
+      where: {
+        id: { not: id }, restaurantId: existing.restaurantId, date: nextDate, time: nextTime,
+        OR: [
+          { status: { in: [...ACTIVE_CAPACITY_STATUSES] } },
+          { status: "PENDING", OR: [{ holdExpiresAt: { gt: now } }, { confirmationExpiresAt: { gt: now } }] },
+        ],
+      },
+      _sum: { partySize: true },
+    }),
+  ]);
+  if (!getOpeningTimeSlots(existing.restaurant.openingHours, nextDateText).includes(nextTime)) {
+    throw Object.assign(new Error("The restaurant is closed at this time"), { status: 409 });
+  }
+  const closure = getMatchingClosure(closures, nextTime);
+  if (closure || override?.isBlocked) {
+    throw Object.assign(new Error(closure?.reason ?? override?.note ?? "This time is unavailable"), { status: 409 });
+  }
+  const tableCapacity = existing.restaurant.tables.reduce((sum, table) => sum + table.capacity, 0);
+  const capacity = override?.capacity ?? (tableCapacity || existing.restaurant.maxCapacity);
+  if ((bookedSeatsAgg._sum.partySize ?? 0) + nextPartySize > capacity) {
+    throw Object.assign(new Error("This time slot does not have enough remaining seats"), { status: 409 });
+  }
+
+  const updated = await prisma.reservation.update({
     where: { id, userId },
     data: {
-      ...(data.date && { date: new Date(data.date) }),
+      ...(data.date && { date: nextDate }),
       ...(data.time && { time: data.time }),
       ...(data.partySize && { partySize: data.partySize }),
       ...(data.specialRequests !== undefined && {
         specialRequests: data.specialRequests,
       }),
+      ...(existing.status === "CONFIRMED" ? { status: "MODIFIED" } : {}),
+      ...(existing.status === "CONFIRMED" ? { confirmationExpiresAt: new Date(now.getTime() + RESTAURANT_CONFIRMATION_MINUTES * 60_000) } : {}),
     },
+    include: { restaurant: true, payment: true },
   });
+  createNotification(existing.restaurant.adminId, "RESERVATION_MODIFIED", "Reservation changed", `A customer changed a reservation to ${nextDateText} at ${nextTime} for ${nextPartySize} guests.`, { reservationId: id }).catch(() => {});
+  createNotification(userId, "RESERVATION_MODIFIED", "Reservation update submitted", `Your changes for ${nextDateText} at ${nextTime} were sent to ${existing.restaurant.name} for confirmation.`, { reservationId: id }).catch(() => {});
+  return updated;
 };
 
 // ── internal helper ───────────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import * as Crypto from 'expo-crypto';
+import * as WebBrowser from 'expo-web-browser';
 import {
   ActivityIndicator,
   Pressable,
@@ -14,13 +16,16 @@ import { Screen } from '@/components/screen';
 import { brand } from '@/constants/brand';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
+import type { DiningPreferences } from '@/types/mobile-types';
 
 type Message = {
   id: number;
   from: 'user' | 'assistant';
   text: string;
-  recommendations?: { id: string; name: string; area: string; cuisine?: string }[];
+  recommendations?: { id?: string; restaurantId?: string; name: string; area: string; cuisine?: string }[];
 };
+
+const paymentUrlFrom = (text: string) => text.match(/Payment link:\s*(https?:\/\/\S+)/i)?.[1] ?? text.match(/https:\/\/checkout\.stripe\.com\/\S+/)?.[0];
 
 const SUGGESTIONS = [
   'Romantic dinner spots in Colombo',
@@ -40,8 +45,15 @@ export default function ChatScreen() {
     },
   ]);
   const [loading, setLoading] = useState(false);
+  const [sessionId] = useState(() => Crypto.randomUUID());
+  const [savedPreferences, setSavedPreferences] = useState<Partial<DiningPreferences>>({});
 
-  const userPrefs = (user as any)?.diningPreferences;
+  useEffect(() => {
+    if (!user) { setSavedPreferences({}); return; }
+    api<Partial<DiningPreferences>>('/api/users/me/preferences').then(setSavedPreferences).catch(() => undefined);
+  }, [user]);
+
+  const userPrefs = savedPreferences;
   const userCuisines: string[] = userPrefs?.cuisines || [];
   const userDietary: string[] = userPrefs?.dietaryRestrictions || [];
   const userBudget: string | undefined = userPrefs?.budgetPreference;
@@ -80,19 +92,15 @@ export default function ChatScreen() {
     const text = (customText || input).trim();
     if (!text) return;
 
-    if (!user) {
-      router.push('/sign-in');
-      return;
-    }
-
+    const history = messages.map((message) => ({ role: message.from, content: message.text }));
     setMessages((current) => [...current, { id: Date.now(), from: 'user', text }]);
     if (!customText) setInput('');
     setLoading(true);
 
     try {
-      const response = await api<{ message: string; recommendations?: any[] }>('/api/chat/guest', {
+      const response = await api<{ message: string; data?: unknown; guest_limit_reached?: boolean }>(user ? '/api/chat/message' : '/api/chat/guest', {
         method: 'POST',
-        body: { message: text },
+        body: { message: text, sessionId, history },
       });
 
       setMessages((current) => [
@@ -101,9 +109,12 @@ export default function ChatScreen() {
           id: Date.now() + 1,
           from: 'assistant',
           text: response.message || "Here's what I found for you!",
-          recommendations: response.recommendations,
+          recommendations: Array.isArray(response.data) ? response.data : undefined,
         },
       ]);
+      if (response.guest_limit_reached) {
+        setMessages((current) => [...current, { id: Date.now() + 2, from: 'assistant', text: 'Sign in to keep chatting and save your dining history.' }]);
+      }
     } catch (err: any) {
       setMessages((current) => [
         ...current,
@@ -118,33 +129,6 @@ export default function ChatScreen() {
     }
   };
 
-  if (!user) {
-    return (
-      <Screen style={{ paddingHorizontal: 16 }}>
-        <View style={styles.heading}>
-          <View style={styles.aiIcon}>
-            <Ionicons name="sparkles" size={20} color="#FFFFFF" />
-          </View>
-          <View>
-            <Text style={styles.title}>AI Dining Assistant</Text>
-            <Text style={styles.subtitle}>Personalized dining suggestions & instant booking</Text>
-          </View>
-        </View>
-
-        <View style={styles.authLockCard}>
-          <Ionicons name="lock-closed-outline" size={42} color={brand.green} />
-          <Text style={styles.authLockTitle}>Sign in to Chat with AI</Text>
-          <Text style={styles.authLockCopy}>
-            Get personalized restaurant recommendations, ask about menus, dietary options, and reserve tables seamlessly.
-          </Text>
-          <Pressable style={styles.authSignInBtn} onPress={() => router.push('/sign-in')}>
-            <Text style={styles.authSignInText}>Sign in to Continue</Text>
-          </Pressable>
-        </View>
-      </Screen>
-    );
-  }
-
   return (
     <Screen style={{ flex: 1, paddingHorizontal: 16 }}>
       {/* Header */}
@@ -152,17 +136,20 @@ export default function ChatScreen() {
         <View style={styles.aiIcon}>
           <Ionicons name="sparkles" size={20} color="#FFFFFF" />
         </View>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.title}>AI Dining Assistant</Text>
-          <Text style={styles.subtitle}>Personalized dining suggestions & instant booking</Text>
+          <Text style={styles.subtitle}>{user ? 'Personalized suggestions with saved history' : 'Guest mode · 3 free messages'}</Text>
         </View>
+        {user && <Pressable onPress={() => router.push('/chat-history')}><Ionicons name="time-outline" size={23} color={brand.green}/></Pressable>}
       </View>
 
       {/* Connection Notice */}
       <View style={styles.notice}>
         <Ionicons name="checkmark-circle-outline" size={16} color={brand.green} />
-        <Text style={styles.noticeText}>AI Concierge: Active & Connected</Text>
+        <Text style={styles.noticeText}>{user ? 'AI Concierge: Active & saving this chat' : 'Try AI without an account'}</Text>
       </View>
+
+      {!user && <Pressable style={styles.guestBanner} onPress={() => router.push('/sign-in')}><Text style={styles.guestText}>Sign in for unlimited chat and personalised recommendations →</Text></Pressable>}
 
       {/* Suggestion Chips */}
       <ScrollView
@@ -199,13 +186,20 @@ export default function ChatScreen() {
               {message.text}
             </Text>
 
+            {message.from === 'assistant' && paymentUrlFrom(message.text) && (
+              <Pressable style={styles.paymentAction} onPress={() => WebBrowser.openBrowserAsync(paymentUrlFrom(message.text)!)}>
+                <Ionicons name="card-outline" size={16} color="#FFFFFF" />
+                <Text style={styles.paymentActionText}>Open secure payment</Text>
+              </Pressable>
+            )}
+
             {message.recommendations && message.recommendations.length > 0 && (
               <View style={styles.recsContainer}>
                 {message.recommendations.map((rec) => (
                   <Pressable
-                    key={rec.id}
+                    key={rec.id ?? rec.restaurantId}
                     style={styles.recCard}
-                    onPress={() => router.push(`/restaurant/${rec.id}` as never)}
+                    onPress={() => router.push(`/restaurant/${rec.id ?? rec.restaurantId}` as never)}
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={styles.recName}>{rec.name}</Text>
@@ -275,6 +269,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   noticeText: { color: brand.green, fontSize: 12, fontWeight: '600' },
+  guestBanner: { backgroundColor: brand.greenDark, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, marginBottom: 8 },
+  guestText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
   suggestionScroll: { maxHeight: 38, marginBottom: 8 },
   suggestionContainer: { gap: 8, paddingRight: 16 },
   suggestionChip: {
@@ -309,6 +305,8 @@ const styles = StyleSheet.create({
   recName: { fontWeight: '700', color: brand.ink, fontSize: 13 },
   recArea: { color: brand.muted, fontSize: 11 },
   recAction: { color: brand.green, fontWeight: '700', fontSize: 12 },
+  paymentAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: brand.green, borderRadius: 11, paddingVertical: 10, marginTop: 10 },
+  paymentActionText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12 },
   composer: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
